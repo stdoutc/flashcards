@@ -35,12 +35,18 @@ interface CardEditorProps {
 }
 
 const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCancel }) => {
-  const [previewMode, setPreviewMode] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(true);
   const [activeField, setActiveField] = useState<'front' | 'back'>('front');
 
-  // draft 变化时（新卡 vs 编辑卡切换）重置预览
+  // 图片链接插入状态
+  const [imgPickerOpen, setImgPickerOpen] = useState(false);
+  const [imgUrl, setImgUrl] = useState('');
+  const [imgAlt, setImgAlt] = useState('');
+  const imgUrlRef = useRef<HTMLInputElement>(null);
+
+  // draft 变化时（新卡 vs 编辑卡切换）重置状态
   const draftId = draft.id;
-  useEffect(() => { setPreviewMode(false); setActiveField('front'); }, [draftId]);
+  useEffect(() => { setActiveField('front'); setImgPickerOpen(false); }, [draftId]);
 
   const handleToolbar = useCallback((
     field: 'front' | 'back',
@@ -57,42 +63,33 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
     setTimeout(() => el.focus(), 0);
   }, [draft, onChange]);
 
+  const openImgPicker = () => {
+    setImgPickerOpen(true);
+    setImgUrl('');
+    setImgAlt('');
+    setTimeout(() => imgUrlRef.current?.focus(), 50);
+  };
+
+  const handleInsertImageUrl = () => {
+    const url = imgUrl.trim();
+    if (!url) return;
+    const alt = imgAlt.trim() || 'image';
+    const mdImg = `![${alt}](${url})`;
+    const elId = activeField === 'front' ? 'modal-editor-front' : 'modal-editor-back';
+    const el = document.getElementById(elId) as HTMLTextAreaElement | null;
+    const newVal = el
+      ? insertAtCursor(el, mdImg, '', '')
+      : draft[activeField] + mdImg;
+    onChange({ ...draft, [activeField]: newVal });
+    setImgPickerOpen(false);
+    setTimeout(() => el?.focus(), 0);
+  };
+
   const canSave = draft.front.trim().length > 0 && draft.back.trim().length > 0;
 
-  if (previewMode) {
-    return (
-      <div className="card-preview-panel">
-        <div className="preview-face-label">正面</div>
-        <div className="card-preview-face">
-          <CardRenderer content={draft.front || '（空）'} />
-        </div>
-        <div className="preview-face-label">反面</div>
-        <div className="card-preview-face">
-          <CardRenderer content={draft.back || '（空）'} />
-        </div>
-        {draft.tagsText && (
-          <div className="tag-list">
-            {draft.tagsText.split(',').map((t) => t.trim()).filter(Boolean).map((t) => (
-              <span key={t} className="tag">{t}</span>
-            ))}
-          </div>
-        )}
-        <div className="editor-actions" style={{ marginTop: 12 }}>
-          <button type="button" className="button button-ghost" onClick={() => setPreviewMode(false)}>
-            继续编辑
-          </button>
-          <button
-            type="button"
-            className="button button-primary"
-            onClick={onSave}
-            disabled={!canSave}
-          >
-            {draft.id ? '保存修改' : '添加卡片'}
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const tags = draft.tagsText
+    ? draft.tagsText.split(',').map((t) => t.trim()).filter(Boolean)
+    : [];
 
   return (
     <>
@@ -121,61 +118,140 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
           onClick={() => handleToolbar(activeField, '$', '$', 'x^2')}>𝑓</button>
         <button type="button" className="button button-ghost md-tool" title="块级公式 $$...$$"
           onClick={() => handleToolbar(activeField, '$$\n', '\n$$', '\\int_0^\\infty')}>Σ</button>
+        <span className="toolbar-divider" />
+        <button
+          type="button"
+          className={`button button-ghost md-tool${imgPickerOpen ? ' active' : ''}`}
+          title="插入图片链接"
+          onClick={() => imgPickerOpen ? setImgPickerOpen(false) : openImgPicker()}
+        >
+          🖼
+        </button>
+        <span className="toolbar-divider" />
+        <button
+          type="button"
+          className={`button button-ghost md-tool${previewOpen ? ' active' : ''}`}
+          title={previewOpen ? '隐藏预览' : '显示预览'}
+          onClick={() => setPreviewOpen((v) => !v)}
+        >
+          👁
+        </button>
       </div>
 
-      <div className="field">
-        <label className="label" htmlFor="modal-editor-front">
-          正面<span className="label-sub">单词 / 问题 / 提示</span>
-        </label>
-        <textarea
-          id="modal-editor-front"
-          className={`textarea editor-textarea ${activeField === 'front' ? 'active-field' : ''}`}
-          value={draft.front}
-          onChange={(e) => onChange({ ...draft, front: e.target.value })}
-          onFocus={() => setActiveField('front')}
-          placeholder={"例如：什么是牛顿第二定律？\n\n支持 Markdown：**粗体** *斜体* `code`\n支持 LaTeX：$F=ma$"}
-          autoFocus
-        />
-      </div>
+      {/* 图片链接输入面板 */}
+      {imgPickerOpen && (
+        <div className="img-size-picker">
+          <div className="img-size-picker-header">
+            <span className="img-size-picker-title">插入图片到「{activeField === 'front' ? '正面' : '反面'}」</span>
+          </div>
+          <div className="img-size-picker-custom">
+            <span className="img-size-custom-label">图片 URL：</span>
+            <input
+              ref={imgUrlRef}
+              type="url"
+              className="input"
+              style={{ flex: 1, minWidth: 0 }}
+              placeholder="https://example.com/image.png"
+              value={imgUrl}
+              onChange={(e) => setImgUrl(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleInsertImageUrl()}
+            />
+          </div>
+          <div className="img-size-picker-custom">
+            <span className="img-size-custom-label">替代文字：</span>
+            <input
+              type="text"
+              className="input"
+              style={{ flex: 1, minWidth: 0 }}
+              placeholder="图片描述（可选）"
+              value={imgAlt}
+              onChange={(e) => setImgAlt(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleInsertImageUrl()}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" className="button button-ghost img-size-cancel"
+              onClick={() => setImgPickerOpen(false)}>取消</button>
+            <button type="button" className="button button-primary"
+              disabled={!imgUrl.trim()} onClick={handleInsertImageUrl}>插入</button>
+          </div>
+        </div>
+      )}
 
-      <div className="field">
-        <label className="label" htmlFor="modal-editor-back">
-          反面<span className="label-sub">解释 / 答案</span>
-        </label>
-        <textarea
-          id="modal-editor-back"
-          className={`textarea editor-textarea ${activeField === 'back' ? 'active-field' : ''}`}
-          value={draft.back}
-          onChange={(e) => onChange({ ...draft, back: e.target.value })}
-          onFocus={() => setActiveField('back')}
-          placeholder={"$$F = ma$$\n\n其中 $F$ 为合力，$m$ 为质量，$a$ 为加速度。"}
-        />
-      </div>
+      {/* 编辑 + 实时预览分屏 */}
+      <div className={`editor-split${previewOpen ? ' editor-split--with-preview' : ''}`}>
 
-      <div className="field">
-        <label className="label" htmlFor="modal-editor-tags">
-          标签<span className="label-sub">逗号分隔</span>
-        </label>
-        <input
-          id="modal-editor-tags"
-          className="input"
-          value={draft.tagsText}
-          onChange={(e) => onChange({ ...draft, tagsText: e.target.value })}
-          placeholder="物理, 力学, 重要"
-        />
+        {/* 左：编辑区 */}
+        <div className="editor-split-main">
+          <div className="field">
+            <label className="label" htmlFor="modal-editor-front">
+              正面<span className="label-sub">单词 / 问题 / 提示</span>
+            </label>
+            <textarea
+              id="modal-editor-front"
+              className={`textarea editor-textarea ${activeField === 'front' ? 'active-field' : ''}`}
+              value={draft.front}
+              onChange={(e) => onChange({ ...draft, front: e.target.value })}
+              onFocus={() => setActiveField('front')}
+              placeholder={"例如：什么是牛顿第二定律？\n\n支持 Markdown：**粗体** *斜体* `code`\n支持 LaTeX：$F=ma$"}
+              autoFocus
+            />
+          </div>
+
+          <div className="field">
+            <label className="label" htmlFor="modal-editor-back">
+              反面<span className="label-sub">解释 / 答案</span>
+            </label>
+            <textarea
+              id="modal-editor-back"
+              className={`textarea editor-textarea ${activeField === 'back' ? 'active-field' : ''}`}
+              value={draft.back}
+              onChange={(e) => onChange({ ...draft, back: e.target.value })}
+              onFocus={() => setActiveField('back')}
+              placeholder={"$$F = ma$$\n\n其中 $F$ 为合力，$m$ 为质量，$a$ 为加速度。"}
+            />
+          </div>
+
+          <div className="field">
+            <label className="label" htmlFor="modal-editor-tags">
+              标签<span className="label-sub">逗号分隔</span>
+            </label>
+            <input
+              id="modal-editor-tags"
+              className="input"
+              value={draft.tagsText}
+              onChange={(e) => onChange({ ...draft, tagsText: e.target.value })}
+              placeholder="物理, 力学, 重要"
+            />
+          </div>
+        </div>
+
+        {/* 右：实时预览 */}
+        {previewOpen && (
+          <div className="editor-split-preview">
+            <div className="editor-preview-label">实时预览</div>
+            <div className="preview-face-label">正面</div>
+            <div className="card-preview-face">
+              <CardRenderer content={draft.front || ''} />
+              {!draft.front && <span className="editor-preview-empty">（空）</span>}
+            </div>
+            <div className="preview-face-label" style={{ marginTop: 12 }}>反面</div>
+            <div className="card-preview-face">
+              <CardRenderer content={draft.back || ''} />
+              {!draft.back && <span className="editor-preview-empty">（空）</span>}
+            </div>
+            {tags.length > 0 && (
+              <div className="tag-list" style={{ marginTop: 10 }}>
+                {tags.map((t) => <span key={t} className="tag">{t}</span>)}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="editor-actions">
         <button type="button" className="button button-ghost" onClick={onCancel}>
           取消
-        </button>
-        <button
-          type="button"
-          className="button"
-          onClick={() => setPreviewMode(true)}
-          disabled={!draft.front.trim() && !draft.back.trim()}
-        >
-          预览
         </button>
         <button
           type="button"
@@ -234,7 +310,7 @@ export const CardEditPage: React.FC = () => {
   );
 
   const cardsOfDeck = useMemo(
-    () => state.cards.filter((c) => c.deckId === deckId),
+    () => [...state.cards.filter((c) => c.deckId === deckId)].reverse(),
     [state.cards, deckId],
   );
 
