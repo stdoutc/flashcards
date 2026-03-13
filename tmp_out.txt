@@ -1,0 +1,22 @@
+﻿Row 3 paragraphs:
+  para 0: runs=3, text='瀹炰範鐢熻嚜鎴戦壌瀹氾紙鍙粠瀹炰範鍐呭/宸ヤ綔杩涘睍鏂归潰鎻忚堪锛夛細'
+    font size=114300, bold=True, name=瀹嬩綋
+  para 1: runs=0, text=''
+  para 2: runs=31, text='锛堟閮ㄥ垎涓昏闄堣堪鎵€鍋氬伐浣滐紝涓汉鍙嶆€濇€荤粨绛夊唴瀹癸紝瀛楀彿閫備腑锛屽瓧鏁版帶鍒跺湪涓ら〉涔嬪唴锛涘～鍐欎箣鍚庝氦瀵煎笀瀹￠槄锛屽闃呭悎鏍煎悗锛屽皢鐢辨湰浜哄拰瀵?
+    font size=114300, bold=None, name=瀹嬩綋
+  para 3: runs=0, text=''
+  para 4: runs=0, text=''
+  para 5: runs=0, text=''
+  para 6: runs=0, text=''
+  para 7: runs=0, text=''
+  para 8: runs=0, text=''
+  para 9: runs=0, text=''
+  para 10: runs=0, text=''
+  para 11: runs=0, text=''
+  para 12: runs=0, text=''
+  para 13: runs=0, text=''
+  para 14: runs=0, text=''
+  para 15: runs=0, text=''
+  para 16: runs=0, text=''
+  para 17: runs=0, text=''
+  para 18: runs=0, text=''
