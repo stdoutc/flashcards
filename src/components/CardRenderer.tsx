@@ -5,6 +5,8 @@ import katex from 'katex';
 interface Props {
   content: string;
   className?: string;
+  /** 列表紧凑模式：图片替换为名称徽章，不实际加载 */
+  compact?: boolean;
 }
 
 // ── 创建独立 marked 实例，不影响全局 ────────────────────────────
@@ -59,13 +61,31 @@ md.use({
   },
 });
 
-export const CardRenderer: React.FC<Props> = ({ content, className }) => {
+// 将内容中的图片替换为名称徽章（用于列表紧凑展示）
+function stripImages(content: string): string {
+  return content
+    // Markdown 图片：![alt|width](url) → [🖼 alt]
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, (_, alt) => {
+      const name = alt.replace(/\|.*$/, '').trim() || '图片';
+      return `<span class="img-badge">🖼 ${name}</span>`;
+    })
+    // HTML img 标签 → [🖼 alt]
+    .replace(/<img\b[^>]*alt="([^"]*)"[^>]*>/gi, (_, alt) => {
+      const name = alt.trim() || '图片';
+      return `<span class="img-badge">🖼 ${name}</span>`;
+    })
+    .replace(/<img\b[^>]*>/gi, '<span class="img-badge">🖼 图片</span>');
+}
+
+export const CardRenderer: React.FC<Props> = ({ content, className, compact }) => {
   if (!content) return null;
-  const html = useMemo(() => md.parse(content) as string, [content]);
+  const html = useMemo(() => {
+    const src = compact ? stripImages(content) : content;
+    return md.parse(src) as string;
+  }, [content, compact]);
   return (
     <div
       className={`md-content ${className ?? ''}`.trim()}
-      // marked 原生支持 HTML 直通，<img>、<br> 等均可正常渲染
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

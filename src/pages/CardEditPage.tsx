@@ -73,13 +73,49 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
     text.replace(IMG_REF_RE, (key) => localImagesRef.current[key] ?? key),
   []);
 
-  // draft 变化时（新卡 vs 编辑卡切换）重置状态
+  // 为长字符串生成/复用折叠 key
+  const getOrCreateKey = useCallback((longVal: string): string => {
+    const existing = Object.entries(localImagesRef.current).find(([, v]) => v === longVal);
+    const key = existing?.[0] ?? `img-${Math.random().toString(36).slice(2, 10)}`;
+    if (!existing) localImagesRef.current[key] = longVal;
+    return key;
+  }, []);
+
+  // 将内容中所有长 URL 折叠为占位符（用于加载已有卡片时）
+  const foldContent = useCallback((text: string): string => {
+    // 折叠 Markdown 图片语法中的长 URL：![alt](longurl)
+    let result = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
+      if (url.length <= LONG_URL_THRESHOLD) return match;
+      return `![${alt}](${getOrCreateKey(url)})`;
+    });
+
+    // 折叠 HTML <img> 标签中的长 src，同时转为 Markdown 语法统一显示风格（双引号/单引号均处理）
+    const foldImgTag = (match: string, attrs: string, src: string): string => {
+      if (src.length <= LONG_URL_THRESHOLD) return match;
+      // 尝试从 alt 属性提取图片名
+      const altMatch = attrs.match(/alt=["']([^"']*)["']/i);
+      const alt = altMatch?.[1] ?? '';
+      return `![${alt}](${getOrCreateKey(src)})`;
+    };
+    result = result.replace(/<img\b([^>]*?)src="([^"]*)"[^>]*>/gi,
+      (match, attrs, src) => foldImgTag(match, attrs, src));
+    result = result.replace(/<img\b([^>]*?)src='([^']*)'[^>]*>/gi,
+      (match, attrs, src) => foldImgTag(match, attrs, src));
+
+    return result;
+  }, [getOrCreateKey]);
+
+  // draft 变化时（新卡 vs 编辑卡切换）重置状态，并折叠已有长 URL
   const draftId = draft.id;
   useEffect(() => {
     setActiveField('front');
     setImgPickerOpen(false);
-    setDisplayDraft(draft);
     localImagesRef.current = {};
+    setDisplayDraft({
+      ...draft,
+      front: foldContent(draft.front),
+      back: foldContent(draft.back),
+    });
   }, [draftId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // textarea 普通编辑：同步展示草稿，并把展开后的内容同步给父组件
@@ -130,16 +166,22 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
     const elId = activeField === 'front' ? 'modal-editor-front' : 'modal-editor-back';
     const el = document.getElementById(elId) as HTMLTextAreaElement | null;
 
-    const newDisplayVal = el
-      ? insertAtCursor(el, displaySyntax, '', '')
-      : displayDraft[activeField] + displaySyntax;
+    let newDisplayVal: string;
+    let newRealVal: string;
+
+    if (el) {
+      // 用 display 文本的光标位置分割，再分别 expand 以正确映射到 real 文本坐标
+      // （display 含短占位符，real 含完整 URL，两者长度差距悬殊，不能直接用同一偏移量）
+      const dispBefore = displayDraft[activeField].slice(0, el.selectionStart);
+      const dispAfter  = displayDraft[activeField].slice(el.selectionEnd);
+      newDisplayVal = dispBefore + displaySyntax + dispAfter;
+      newRealVal    = expand(dispBefore) + realSyntax + expand(dispAfter);
+    } else {
+      newDisplayVal = displayDraft[activeField] + displaySyntax;
+      newRealVal    = expand(displayDraft[activeField]) + realSyntax;
+    }
 
     setDisplayDraft((prev) => ({ ...prev, [activeField]: newDisplayVal }));
-    // 父组件 draft 始终存真实 URL
-    const existingReal = expand(displayDraft[activeField]);
-    const newRealVal = el
-      ? existingReal.slice(0, el.selectionStart) + realSyntax + existingReal.slice(el.selectionEnd)
-      : existingReal + realSyntax;
     onChange({ ...draft, [activeField]: newRealVal });
     setImgPickerOpen(false);
     setTimeout(() => el?.focus(), 0);
@@ -633,10 +675,10 @@ export const CardEditPage: React.FC = () => {
                   onClick={bulkMode ? undefined : () => openEditModal(card)}
                 >
                   <div className="card-front">
-                    <CardRenderer content={card.front} />
+                    <CardRenderer content={card.front} compact />
                   </div>
                   <div className="card-back">
-                    <CardRenderer content={card.back} />
+                    <CardRenderer content={card.back} compact />
                   </div>
                   {card.tags?.length > 0 && (
                     <div className="tag-list" style={{ marginTop: 4 }}>
