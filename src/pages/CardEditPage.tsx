@@ -34,6 +34,11 @@ interface CardEditorProps {
   onCancel: () => void;
 }
 
+// 长 URL 折叠阈值（超过此长度用占位符代替）
+const LONG_URL_THRESHOLD = 80;
+// 正则：匹配折叠占位符 img-xxxxxxxx
+const IMG_REF_RE = /img-[a-z0-9]{8}/g;
+
 const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCancel }) => {
   const [previewOpen, setPreviewOpen] = useState(true);
   const [activeField, setActiveField] = useState<'front' | 'back'>('front');
@@ -43,10 +48,45 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
   const [imgUrl, setImgUrl] = useState('');
   const [imgAlt, setImgAlt] = useState('');
   const imgUrlRef = useRef<HTMLInputElement>(null);
+  const imgFileRef = useRef<HTMLInputElement>(null);
+
+  // 读取本地图片为 base64，填入 URL 输入框（长 URL 在插入时自动折叠）
+  const handleLocalFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImgUrl(reader.result as string);
+      if (!imgAlt) setImgAlt(file.name.replace(/\.[^.]+$/, ''));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // 长 URL 折叠缓存：ref（不需要触发渲染）
+  const localImagesRef = useRef<Record<string, string>>({});
+  // 展示用草稿（textarea 中显示，含短占位符）
+  const [displayDraft, setDisplayDraft] = useState<CardDraft>(draft);
+
+  // 将展示文本中的占位符展开为真实 URL
+  const expand = useCallback((text: string) =>
+    text.replace(IMG_REF_RE, (key) => localImagesRef.current[key] ?? key),
+  []);
 
   // draft 变化时（新卡 vs 编辑卡切换）重置状态
   const draftId = draft.id;
-  useEffect(() => { setActiveField('front'); setImgPickerOpen(false); }, [draftId]);
+  useEffect(() => {
+    setActiveField('front');
+    setImgPickerOpen(false);
+    setDisplayDraft(draft);
+    localImagesRef.current = {};
+  }, [draftId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // textarea 普通编辑：同步展示草稿，并把展开后的内容同步给父组件
+  const handleFieldChange = useCallback((field: 'front' | 'back', value: string) => {
+    setDisplayDraft((prev) => ({ ...prev, [field]: value }));
+    onChange({ ...draft, [field]: expand(value) });
+  }, [draft, onChange, expand]);
 
   const handleToolbar = useCallback((
     field: 'front' | 'back',
@@ -58,10 +98,11 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
       field === 'front' ? 'modal-editor-front' : 'modal-editor-back',
     ) as HTMLTextAreaElement | null;
     if (!el) return;
-    const newVal = insertAtCursor(el, before, after, placeholder);
-    onChange({ ...draft, [field]: newVal });
+    const newDisplayVal = insertAtCursor(el, before, after, placeholder);
+    setDisplayDraft((prev) => ({ ...prev, [field]: newDisplayVal }));
+    onChange({ ...draft, [field]: expand(newDisplayVal) });
     setTimeout(() => el.focus(), 0);
-  }, [draft, onChange]);
+  }, [draft, onChange, expand]);
 
   const openImgPicker = () => {
     setImgPickerOpen(true);
@@ -74,13 +115,32 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
     const url = imgUrl.trim();
     if (!url) return;
     const alt = imgAlt.trim() || 'image';
-    const mdImg = `![${alt}](${url})`;
+
+    // 长 URL（base64 等）折叠为短占位符
+    let displayUrl = url;
+    if (url.length > LONG_URL_THRESHOLD) {
+      const key = `img-${Math.random().toString(36).slice(2, 10)}`;
+      localImagesRef.current[key] = url;
+      displayUrl = key;
+    }
+
+    const displaySyntax = `![${alt}](${displayUrl})`;
+    const realSyntax = `![${alt}](${url})`;
+
     const elId = activeField === 'front' ? 'modal-editor-front' : 'modal-editor-back';
     const el = document.getElementById(elId) as HTMLTextAreaElement | null;
-    const newVal = el
-      ? insertAtCursor(el, mdImg, '', '')
-      : draft[activeField] + mdImg;
-    onChange({ ...draft, [activeField]: newVal });
+
+    const newDisplayVal = el
+      ? insertAtCursor(el, displaySyntax, '', '')
+      : displayDraft[activeField] + displaySyntax;
+
+    setDisplayDraft((prev) => ({ ...prev, [activeField]: newDisplayVal }));
+    // 父组件 draft 始终存真实 URL
+    const existingReal = expand(displayDraft[activeField]);
+    const newRealVal = el
+      ? existingReal.slice(0, el.selectionStart) + realSyntax + existingReal.slice(el.selectionEnd)
+      : existingReal + realSyntax;
+    onChange({ ...draft, [activeField]: newRealVal });
     setImgPickerOpen(false);
     setTimeout(() => el?.focus(), 0);
   };
@@ -138,11 +198,29 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
         </button>
       </div>
 
+      {/* 隐藏的本地文件输入 */}
+      <input
+        ref={imgFileRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handleLocalFile}
+      />
+
       {/* 图片链接输入面板 */}
       {imgPickerOpen && (
         <div className="img-size-picker">
           <div className="img-size-picker-header">
-            <span className="img-size-picker-title">插入图片到「{activeField === 'front' ? '正面' : '反面'}」</span>
+            <span className="img-size-picker-title">
+              插入图片到「{activeField === 'front' ? '正面' : '反面'}」
+            </span>
+            <button
+              type="button"
+              className="button button-ghost img-upload-btn"
+              onClick={() => imgFileRef.current?.click()}
+            >
+              📂 上传本地图片
+            </button>
           </div>
           <div className="img-size-picker-custom">
             <span className="img-size-custom-label">图片 URL：</span>
@@ -190,8 +268,8 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
             <textarea
               id="modal-editor-front"
               className={`textarea editor-textarea ${activeField === 'front' ? 'active-field' : ''}`}
-              value={draft.front}
-              onChange={(e) => onChange({ ...draft, front: e.target.value })}
+              value={displayDraft.front}
+              onChange={(e) => handleFieldChange('front', e.target.value)}
               onFocus={() => setActiveField('front')}
               placeholder={"例如：什么是牛顿第二定律？\n\n支持 Markdown：**粗体** *斜体* `code`\n支持 LaTeX：$F=ma$"}
               autoFocus
@@ -205,8 +283,8 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
             <textarea
               id="modal-editor-back"
               className={`textarea editor-textarea ${activeField === 'back' ? 'active-field' : ''}`}
-              value={draft.back}
-              onChange={(e) => onChange({ ...draft, back: e.target.value })}
+              value={displayDraft.back}
+              onChange={(e) => handleFieldChange('back', e.target.value)}
               onFocus={() => setActiveField('back')}
               placeholder={"$$F = ma$$\n\n其中 $F$ 为合力，$m$ 为质量，$a$ 为加速度。"}
             />
@@ -219,8 +297,8 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
             <input
               id="modal-editor-tags"
               className="input"
-              value={draft.tagsText}
-              onChange={(e) => onChange({ ...draft, tagsText: e.target.value })}
+              value={displayDraft.tagsText}
+              onChange={(e) => { setDisplayDraft((p) => ({ ...p, tagsText: e.target.value })); onChange({ ...draft, tagsText: e.target.value }); }}
               placeholder="物理, 力学, 重要"
             />
           </div>
