@@ -344,6 +344,25 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
               placeholder="物理, 力学, 重要"
             />
           </div>
+
+          {/* Markdown 语法速查（标签下方） */}
+          <div className="editor-cheatsheet-wrap">
+            <details className="md-cheatsheet">
+              <summary>Markdown / LaTeX 语法速查</summary>
+              <div className="md-cheatsheet-body">
+                <div className="cheat-row"><code>{'**粗体**'}</code><span>→ <strong>粗体</strong></span></div>
+                <div className="cheat-row"><code>{'*斜体*'}</code><span>→ <em>斜体</em></span></div>
+                <div className="cheat-row"><code>{'`行内代码`'}</code><span>→ 代码高亮</span></div>
+                <div className="cheat-row"><code>{'```语言 ... ```'}</code><span>→ 代码块</span></div>
+                <div className="cheat-row"><code>{'- item'}</code><span>→ 无序列表</span></div>
+                <div className="cheat-row"><code>{'1. item'}</code><span>→ 有序列表</span></div>
+                <div className="cheat-row"><code>{'$E=mc^2$'}</code><span>→ 行内公式</span></div>
+                <div className="cheat-row"><code>{'$$\\int_0^\\infty$$'}</code><span>→ 块级公式</span></div>
+                <div className="cheat-row"><code>{'\\frac{a}{b}'}</code><span>→ 分数</span></div>
+                <div className="cheat-row"><code>{'\\sqrt{x}'}</code><span>→ 根号</span></div>
+              </div>
+            </details>
+          </div>
         </div>
 
         {/* 右：实时预览 */}
@@ -383,22 +402,6 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
         </button>
       </div>
 
-      {/* Markdown 语法速查 */}
-      <details className="md-cheatsheet">
-        <summary>Markdown / LaTeX 语法速查</summary>
-        <div className="md-cheatsheet-body">
-          <div className="cheat-row"><code>{'**粗体**'}</code><span>→ <strong>粗体</strong></span></div>
-          <div className="cheat-row"><code>{'*斜体*'}</code><span>→ <em>斜体</em></span></div>
-          <div className="cheat-row"><code>{'`行内代码`'}</code><span>→ 代码高亮</span></div>
-          <div className="cheat-row"><code>{'```语言 ... ```'}</code><span>→ 代码块</span></div>
-          <div className="cheat-row"><code>{'- item'}</code><span>→ 无序列表</span></div>
-          <div className="cheat-row"><code>{'1. item'}</code><span>→ 有序列表</span></div>
-          <div className="cheat-row"><code>{'$E=mc^2$'}</code><span>→ 行内公式</span></div>
-          <div className="cheat-row"><code>{'$$\\int_0^\\infty$$'}</code><span>→ 块级公式</span></div>
-          <div className="cheat-row"><code>{'\\frac{a}{b}'}</code><span>→ 分数</span></div>
-          <div className="cheat-row"><code>{'\\sqrt{x}'}</code><span>→ 根号</span></div>
-        </div>
-      </details>
     </>
   );
 };

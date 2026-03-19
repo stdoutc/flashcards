@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useFlashcard } from '../context/FlashcardContext';
 
@@ -205,6 +205,8 @@ const DraftCardItem: React.FC<{
 export const LabPage: React.FC = () => {
   const { state, createCard } = useFlashcard();
   const settings = state.settings;
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpStep, setHelpStep] = useState(0);
 
   // 阶段控制
   const [phase, setPhase] = useState<Phase>('upload');
@@ -228,10 +230,7 @@ export const LabPage: React.FC = () => {
   const [importedCount, setImportedCount] = useState(0);
 
   // ── 图片选择 ──────────────────────────────────────────────────────────────
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
+  const loadImageFile = (file: File) => {
     setImageFile(file);
     const reader = new FileReader();
     reader.onload = () => {
@@ -242,19 +241,37 @@ export const LabPage: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    loadImageFile(file);
+  };
+
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
     if (!file || !file.type.startsWith('image/')) return;
-    setImageFile(file);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImageDataUrl(reader.result as string);
-      setPhase('upload');
-      setError(null);
-    };
-    reader.readAsDataURL(file);
+    loadImageFile(file);
   };
+
+  // 支持 Ctrl+V / Cmd+V 粘贴图片
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items || items.length === 0) return;
+      for (const item of Array.from(items)) {
+        if (!item.type.startsWith('image/')) continue;
+        const file = item.getAsFile();
+        if (!file) continue;
+        e.preventDefault();
+        loadImageFile(file);
+        break;
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
 
   // ── AI 识别 ────────────────────────────────────────────────────────────────
   const handleRecognize = async () => {
@@ -325,12 +342,80 @@ export const LabPage: React.FC = () => {
   };
 
   // ── 渲染 ──────────────────────────────────────────────────────────────────
+  const helpSteps = [
+    { title: '上传/粘贴图片', desc: '点击上传、拖拽图片，或直接 Ctrl+V 粘贴截图。' },
+    { title: '选择识别模式', desc: '先选“快速模式”或“精确模式”。' },
+    { title: '运行 AI 识别', desc: '点击“运行此测试功能”开始识别。' },
+    { title: '审核卡片', desc: '先检查并编辑识别出的正反面内容。' },
+    { title: '导入卡组', desc: '确认无误后，点击“导入卡组”完成导入。' },
+  ];
+
+  const openHelpGuide = () => {
+    setHelpStep(0);
+    setHelpOpen(true);
+  };
+
+  const closeHelpGuide = () => setHelpOpen(false);
+  const isStep = (idx: number) => helpOpen && helpStep === idx;
+  const advanceGuideOnTarget = (idx: number) => {
+    if (!helpOpen || helpStep !== idx) return false;
+    if (helpStep >= helpSteps.length - 1) closeHelpGuide();
+    else setHelpStep((s) => s + 1);
+    return true;
+  };
+
   return (
     <div className="lab-page">
+      {helpOpen && <div className="lab-guide-backdrop" aria-hidden />}
+
       <div className="lab-header">
-        <h2 className="lab-title">🧪 实验室</h2>
+        <div className="lab-header-row">
+          <h2 className="lab-title">🧪 实验室</h2>
+          <button
+            type="button"
+            className="button button-ghost lab-help-btn"
+            onClick={() => (helpOpen ? closeHelpGuide() : openHelpGuide())}
+          >
+            {helpOpen ? '收起帮助' : '使用帮助'}
+          </button>
+        </div>
         <p className="lab-subtitle">测试功能合集（当前开放：AI 图片识别制卡）</p>
       </div>
+
+      {helpOpen && (
+        <section className="lab-help card-surface lab-guide-panel">
+          <h3 className="lab-section-title">
+            引导步骤 {helpStep + 1}/{helpSteps.length}：{helpSteps[helpStep].title}
+          </h3>
+          <p className="lab-guide-desc">{helpSteps[helpStep].desc}</p>
+          <div className="lab-guide-actions">
+            <button
+              type="button"
+              className="button button-ghost"
+              onClick={() => setHelpStep((s) => Math.max(0, s - 1))}
+              disabled={helpStep === 0}
+            >
+              上一步
+            </button>
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={() => {
+                if (helpStep >= helpSteps.length - 1) closeHelpGuide();
+                else setHelpStep((s) => s + 1);
+              }}
+            >
+              {helpStep >= helpSteps.length - 1 ? '完成' : '下一步'}
+            </button>
+          </div>
+        </section>
+      )}
+      {helpOpen && isStep(4) && (
+        <div className="lab-guide-fixed-arrow" aria-hidden>
+          <div className="lab-guide-fixed-text">请在右侧底部点击“导入卡组”</div>
+          <div className="lab-guide-fixed-icon">⬇</div>
+        </div>
+      )}
 
       {/* 完成状态 */}
       {phase === 'done' && (
@@ -359,8 +444,11 @@ export const LabPage: React.FC = () => {
             <h3 className="lab-section-title">① 测试功能：AI 图片识别制卡</h3>
 
             <div
-              className={`lab-dropzone ${imageDataUrl ? 'lab-dropzone--has-image' : ''}`}
-              onClick={() => fileInputRef.current?.click()}
+              className={`lab-dropzone ${imageDataUrl ? 'lab-dropzone--has-image' : ''} ${isStep(0) ? 'lab-guide-focus' : ''}`}
+              onClick={() => {
+                if (advanceGuideOnTarget(0)) return;
+                fileInputRef.current?.click();
+              }}
               onDrop={handleDrop}
               onDragOver={(e) => e.preventDefault()}
             >
@@ -370,7 +458,7 @@ export const LabPage: React.FC = () => {
                 <div className="lab-dropzone-hint">
                   <span className="lab-dropzone-icon">🖼️</span>
                   <span>点击或拖拽图片到此处</span>
-                  <span className="lab-dropzone-sub">支持 JPG / PNG / WEBP 等格式</span>
+                  <span className="lab-dropzone-sub">支持 JPG / PNG / WEBP，以及 Ctrl+V 粘贴图片</span>
                 </div>
               )}
             </div>
@@ -394,13 +482,19 @@ export const LabPage: React.FC = () => {
 
             {error && <p className="lab-error">{error}</p>}
 
-            <div className="lab-mode-picker">
+            <div
+              className={`lab-mode-picker ${isStep(1) ? 'lab-guide-focus' : ''}`}
+              onClick={() => { advanceGuideOnTarget(1); }}
+            >
               <span className="lab-mode-label">识别模式</span>
               <div className="lab-mode-buttons">
                 <button
                   type="button"
                   className={`button button-ghost lab-mode-btn ${promptMode === 'fast' ? 'active' : ''}`}
-                  onClick={() => setPromptMode('fast')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPromptMode('fast');
+                  }}
                   disabled={phase === 'loading'}
                   title="更快返回，适合快速预览"
                 >
@@ -409,7 +503,10 @@ export const LabPage: React.FC = () => {
                 <button
                   type="button"
                   className={`button button-ghost lab-mode-btn ${promptMode === 'accurate' ? 'active' : ''}`}
-                  onClick={() => setPromptMode('accurate')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPromptMode('accurate');
+                  }}
                   disabled={phase === 'loading'}
                   title="规则更完整，结果更细致"
                 >
@@ -425,9 +522,12 @@ export const LabPage: React.FC = () => {
 
             <button
               type="button"
-              className="button button-primary lab-recognize-btn"
+              className={`button button-primary lab-recognize-btn ${isStep(2) ? 'lab-guide-focus' : ''}`}
               disabled={!imageDataUrl || phase === 'loading'}
-              onClick={handleRecognize}
+              onClick={() => {
+                if (advanceGuideOnTarget(2)) return;
+                handleRecognize();
+              }}
             >
               {phase === 'loading' ? (
                 <><span className="lab-spinner" />AI 处理中…</>
@@ -445,7 +545,10 @@ export const LabPage: React.FC = () => {
 
           {/* 右：测试结果预览与导入 */}
           {phase === 'review' && (
-            <section className="lab-review-section card-surface">
+            <section
+              className={`lab-review-section card-surface ${isStep(3) ? 'lab-guide-focus' : ''}`}
+              onClick={() => { advanceGuideOnTarget(3); }}
+            >
               <div className="lab-review-header">
                 <h3 className="lab-section-title">② 审核卡片（{draftCards.length} 张）</h3>
                 <button
@@ -491,9 +594,12 @@ export const LabPage: React.FC = () => {
                 </select>
                 <button
                   type="button"
-                  className="button button-primary"
+                  className={`button button-primary ${isStep(4) ? 'lab-guide-focus' : ''}`}
                   disabled={draftCards.length === 0 || !targetDeckId}
-                  onClick={handleImport}
+                  onClick={() => {
+                    if (advanceGuideOnTarget(4)) return;
+                    handleImport();
+                  }}
                 >
                   导入卡组
                 </button>
