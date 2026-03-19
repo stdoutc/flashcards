@@ -40,7 +40,6 @@ export const StudyPage: React.FC = () => {
 
   const [revealed, setRevealed] = useState(false);
   const [sessionTotal, setSessionTotal] = useState(0);
-  const [sessionCorrect, setSessionCorrect] = useState(0);
 
   useEffect(() => {
     if (deckId) selectDeck(deckId);
@@ -109,11 +108,7 @@ export const StudyPage: React.FC = () => {
   const handleRate = (rating: ReviewRating) => {
     reviewCurrentCard(rating);
     setSessionTotal((n) => n + 1);
-    if (rating === 'good' || rating === 'easy') setSessionCorrect((n) => n + 1);
   };
-
-  const sessionAccuracy =
-    sessionTotal > 0 ? Math.round((sessionCorrect / sessionTotal) * 100) : null;
 
   // 当前卡属于哪种类型（用于标签显示）
   const currentCardType = useMemo(() => {
@@ -199,7 +194,7 @@ export const StudyPage: React.FC = () => {
         </span>
         {sessionTotal > 0 && (
           <span className="progress-chip progress-chip-session">
-            本次 {sessionTotal} 张 · {sessionAccuracy}%
+            本次 {sessionTotal} 张
           </span>
         )}
       </div>
@@ -294,7 +289,6 @@ export const StudyPage: React.FC = () => {
           {sessionTotal > 0 && (
             <div className="study-done-stats">
               <span>本次 <b>{sessionTotal}</b> 张</span>
-              <span>正确率 <b>{sessionAccuracy}%</b></span>
               <span>掌握 <b>{todayStats.masteredCount}</b> / {todayStats.total}</span>
             </div>
           )}

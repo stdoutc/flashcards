@@ -138,11 +138,6 @@ export const DeckPage: React.FC = () => {
     setJsonText('');
   };
 
-  const accuracy =
-    state.stats.totalReviews > 0
-      ? Math.round((state.stats.correctReviews / state.stats.totalReviews) * 100)
-      : 0;
-
   return (
     <div className="layout-split">
       <section className="card-surface">
@@ -426,10 +421,6 @@ export const DeckPage: React.FC = () => {
               <div className="stat-card">
                 <div className="stat-label">累计学习次数</div>
                 <div className="stat-value">{state.stats.totalReviews}</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-label">正确率</div>
-                <div className="stat-value">{accuracy}%</div>
               </div>
               <div className="stat-card">
                 <div className="stat-label">已掌握卡片</div>

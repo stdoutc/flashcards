@@ -10,9 +10,52 @@ interface DraftCard {
 }
 
 type Phase = 'upload' | 'loading' | 'review' | 'done';
+type PromptMode = 'fast' | 'accurate';
 
 // ── 豆包 API 调用 ────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `你是一位专业的教育助手。请仔细分析图片中的内容，提取关键知识点，并将其整理成若干张闪卡（flashcard）。
+const ACCURATE_PROMPT = `你是一位专业的教育助手。请先完成“内容类型判断”，再按对应策略制卡。
+
+【第 1 步：判断类型】
+先判断图片主体更接近以下哪一类：
+1) 题目类：如选择题、填空题、简答题、计算题、编程题、真题截图、练习题讲解页
+2) 知识点类：如概念定义、公式定理、知识总结、课堂笔记、思维导图、教材段落
+
+【第 2 步：按类型制卡】
+A. 若是“题目类”：
+- 优先抽取“题干 + 关键条件/选项”作为 front（尽量完整但简洁）
+- 若存在选项，必须“另起一行、一行一个”展示，不得把多个选项写在同一行。
+- 选项建议使用如下格式：
+  A. ...
+  B. ...
+  C. ...
+  D. ...
+- back 给出：正确答案 + 简明解析 + 易错点/考点
+- 如果图片有多道题，可生成多张卡；每题至少 1 张
+
+B. 若是“知识点类”：
+- 先提炼核心知识点，再转为“问答式记忆卡”
+- front 用提问句（定义是什么/如何判断/适用条件/推导结论等）
+- back 给出结构化答案（可用要点列表、公式、简短示例）
+
+【通用要求】
+- 仅输出高质量学习卡，去除无关噪音（页码、水印、装饰）
+- 术语、符号、公式尽量保持原意；公式可用 LaTeX
+- 每张卡包含：
+  - front：正面提问，简洁精准（一句话优先）
+  - back：背面答案，可包含解释、公式、要点列表（支持 Markdown）
+
+请直接以 JSON 数组输出，格式如下（不要有任何多余文字）：
+[
+  {"front": "问题1", "back": "答案1"},
+  {"front": "问题2", "back": "答案2"}
+]`;
+
+// 快速模式：沿用最初简洁提示词，仅增加“题目/知识点判断与处理”
+const FAST_PROMPT = `你是一位专业的教育助手。请先判断图片内容是“题目类”还是“知识点类”，再生成闪卡。
+
+处理规则：
+- 若是题目类（如选择题）：front 以题干为主；若有选项，选项另起一行且一行一个。back 给出正确答案和简明解析。
+- 若是知识点类：提取关键知识点并转为问答式闪卡。
 
 每张闪卡包含：
 - front：正面提问，简洁精准（一句话）
@@ -28,6 +71,7 @@ async function callDoubaoVision(
   apiKey: string,
   model: string,
   imageDataUrl: string,
+  prompt: string,
 ): Promise<DraftCard[]> {
   const resp = await fetch('https://ark.cn-beijing.volces.com/api/v3/chat/completions', {
     method: 'POST',
@@ -42,7 +86,7 @@ async function callDoubaoVision(
           role: 'user',
           content: [
             { type: 'image_url', image_url: { url: imageDataUrl } },
-            { type: 'text', text: SYSTEM_PROMPT },
+            { type: 'text', text: prompt },
           ],
         },
       ],
@@ -110,22 +154,18 @@ const DraftCardItem: React.FC<{
   onChange: (id: string, field: 'front' | 'back', value: string) => void;
   onRemove: (id: string) => void;
 }> = ({ card, index, onChange, onRemove }) => {
-  const [expanded, setExpanded] = useState(true);
+  const autoGrow = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
 
   return (
     <div className="lab-card">
-      <div className="lab-card-header" onClick={() => setExpanded((v) => !v)}>
+      <div className="lab-card-header">
         <span className="lab-card-num">#{index + 1}</span>
-        <span className="lab-card-front-preview">{card.front}</span>
-        <div className="lab-card-actions" onClick={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            className="button button-ghost lab-card-toggle"
-            onClick={() => setExpanded((v) => !v)}
-            title={expanded ? '收起' : '展开'}
-          >
-            {expanded ? '▲' : '▼'}
-          </button>
+        <span className="lab-card-front-preview">{card.front || '（未填写正面）'}</span>
+        <div className="lab-card-actions">
           <button
             type="button"
             className="button button-danger lab-card-remove"
@@ -137,24 +177,26 @@ const DraftCardItem: React.FC<{
         </div>
       </div>
 
-      {expanded && (
-        <div className="lab-card-body">
-          <label className="lab-card-label">正面（问题）</label>
-          <textarea
-            className="textarea lab-card-textarea"
-            value={card.front}
-            rows={2}
-            onChange={(e) => onChange(card.id, 'front', e.target.value)}
-          />
-          <label className="lab-card-label" style={{ marginTop: 8 }}>背面（答案）</label>
-          <textarea
-            className="textarea lab-card-textarea"
-            value={card.back}
-            rows={3}
-            onChange={(e) => onChange(card.id, 'back', e.target.value)}
-          />
-        </div>
-      )}
+      <div className="lab-card-body">
+        <label className="lab-card-label">正面（问题）</label>
+        <textarea
+          className="textarea lab-card-textarea"
+          value={card.front}
+          rows={2}
+          ref={autoGrow}
+          onInput={(e) => autoGrow(e.currentTarget)}
+          onChange={(e) => onChange(card.id, 'front', e.target.value)}
+        />
+        <label className="lab-card-label" style={{ marginTop: 8 }}>背面（答案）</label>
+        <textarea
+          className="textarea lab-card-textarea"
+          value={card.back}
+          rows={3}
+          ref={autoGrow}
+          onInput={(e) => autoGrow(e.currentTarget)}
+          onChange={(e) => onChange(card.id, 'back', e.target.value)}
+        />
+      </div>
     </div>
   );
 };
@@ -180,6 +222,7 @@ export const LabPage: React.FC = () => {
   const [targetDeckId, setTargetDeckId] = useState<string>(
     state.decks[0]?.id ?? '',
   );
+  const [promptMode, setPromptMode] = useState<PromptMode>('fast');
 
   // 完成状态
   const [importedCount, setImportedCount] = useState(0);
@@ -221,10 +264,11 @@ export const LabPage: React.FC = () => {
       return;
     }
     const model = settings.doubaoModel?.trim() || 'doubao-1-5-vision-pro-32k-250115';
+    const prompt = promptMode === 'fast' ? FAST_PROMPT : ACCURATE_PROMPT;
     setPhase('loading');
     setError(null);
     try {
-      const cards = await callDoubaoVision(settings.doubaoApiKey.trim(), model, imageDataUrl);
+      const cards = await callDoubaoVision(settings.doubaoApiKey.trim(), model, imageDataUrl, prompt);
       if (cards.length === 0) throw new Error('AI 未识别到任何知识点，请尝试其他图片');
       setDraftCards(cards);
       setPhase('review');
@@ -285,7 +329,7 @@ export const LabPage: React.FC = () => {
     <div className="lab-page">
       <div className="lab-header">
         <h2 className="lab-title">🧪 实验室</h2>
-        <p className="lab-subtitle">上传图片，AI 自动提取知识点并生成闪卡</p>
+        <p className="lab-subtitle">测试功能合集（当前开放：AI 图片识别制卡）</p>
       </div>
 
       {/* 完成状态 */}
@@ -301,7 +345,7 @@ export const LabPage: React.FC = () => {
               查看卡组
             </Link>
             <button type="button" className="button button-ghost" onClick={handleReset}>
-              继续识别
+              继续测试
             </button>
           </div>
         </div>
@@ -310,9 +354,9 @@ export const LabPage: React.FC = () => {
       {/* 上传 + 识别区 */}
       {phase !== 'done' && (
         <div className="lab-main">
-          {/* 左：图片上传 */}
+          {/* 左：测试功能（AI 图片识别制卡） */}
           <section className="lab-upload-section card-surface">
-            <h3 className="lab-section-title">① 上传图片</h3>
+            <h3 className="lab-section-title">① 测试功能：AI 图片识别制卡</h3>
 
             <div
               className={`lab-dropzone ${imageDataUrl ? 'lab-dropzone--has-image' : ''}`}
@@ -350,6 +394,35 @@ export const LabPage: React.FC = () => {
 
             {error && <p className="lab-error">{error}</p>}
 
+            <div className="lab-mode-picker">
+              <span className="lab-mode-label">识别模式</span>
+              <div className="lab-mode-buttons">
+                <button
+                  type="button"
+                  className={`button button-ghost lab-mode-btn ${promptMode === 'fast' ? 'active' : ''}`}
+                  onClick={() => setPromptMode('fast')}
+                  disabled={phase === 'loading'}
+                  title="更快返回，适合快速预览"
+                >
+                  快速模式
+                </button>
+                <button
+                  type="button"
+                  className={`button button-ghost lab-mode-btn ${promptMode === 'accurate' ? 'active' : ''}`}
+                  onClick={() => setPromptMode('accurate')}
+                  disabled={phase === 'loading'}
+                  title="规则更完整，结果更细致"
+                >
+                  精确模式
+                </button>
+              </div>
+              <span className="lab-mode-hint">
+                {promptMode === 'fast'
+                  ? '优先速度：提示词更短，默认输出更精简'
+                  : '优先质量：提示词更完整，输出更细致'}
+              </span>
+            </div>
+
             <button
               type="button"
               className="button button-primary lab-recognize-btn"
@@ -357,8 +430,8 @@ export const LabPage: React.FC = () => {
               onClick={handleRecognize}
             >
               {phase === 'loading' ? (
-                <><span className="lab-spinner" />AI 识别中…</>
-              ) : '✨ AI 智能识别'}
+                <><span className="lab-spinner" />AI 处理中…</>
+              ) : '✨ 运行此测试功能'}
             </button>
 
             {!settings.doubaoApiKey && (
@@ -370,7 +443,7 @@ export const LabPage: React.FC = () => {
             )}
           </section>
 
-          {/* 右：卡片预览与导入 */}
+          {/* 右：测试结果预览与导入 */}
           {phase === 'review' && (
             <section className="lab-review-section card-surface">
               <div className="lab-review-header">
