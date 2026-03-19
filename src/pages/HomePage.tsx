@@ -20,6 +20,8 @@ export const HomePage: React.FC = () => {
 
   const [deckFilter, setDeckFilter] = useState('');
   const [modal, setModal] = useState<ModalKind>(null);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedDeckIds, setSelectedDeckIds] = useState<Set<string>>(new Set());
 
   // 新建卡组
   const [newDeckName, setNewDeckName] = useState('');
@@ -92,6 +94,36 @@ export const HomePage: React.FC = () => {
     if (!deck) return;
     if (!window.confirm(`确定删除卡组「${deck.name}」及其所有卡片吗？`)) return;
     deleteDeck(deckId);
+  };
+
+  const toggleBulkMode = () => {
+    setBulkMode((v) => !v);
+    setSelectedDeckIds(new Set());
+  };
+
+  const toggleSelectDeck = (deckId: string) => {
+    setSelectedDeckIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(deckId)) next.delete(deckId);
+      else next.add(deckId);
+      return next;
+    });
+  };
+
+  const handleSelectAllDecks = () => {
+    if (selectedDeckIds.size === visibleDecks.length) {
+      setSelectedDeckIds(new Set());
+    } else {
+      setSelectedDeckIds(new Set(visibleDecks.map((d) => d.id)));
+    }
+  };
+
+  const handleBulkDeleteDecks = () => {
+    if (selectedDeckIds.size === 0) return;
+    if (!window.confirm(`确定删除选中的 ${selectedDeckIds.size} 个卡组及其所有卡片吗？此操作不可撤销。`)) return;
+    Array.from(selectedDeckIds).forEach((deckId) => deleteDeck(deckId));
+    setSelectedDeckIds(new Set());
+    setBulkMode(false);
   };
 
   // ── 导出（独立模态框） ──
@@ -182,19 +214,55 @@ export const HomePage: React.FC = () => {
           >
             ↓ 导入卡组
           </button>
+          <button
+            type="button"
+            className={`button button-ghost home-bulk-btn ${bulkMode ? 'active' : ''}`}
+            onClick={toggleBulkMode}
+          >
+            {bulkMode ? '取消批量' : '批量删除'}
+          </button>
         </div>
       </div>
+
+      {bulkMode && (
+        <div className="home-bulk-toolbar card-surface">
+          <button type="button" className="button button-ghost" onClick={handleSelectAllDecks}>
+            {selectedDeckIds.size === visibleDecks.length && visibleDecks.length > 0
+              ? '取消全选'
+              : `全选 (${visibleDecks.length})`}
+          </button>
+          <span className="home-bulk-count">已选 {selectedDeckIds.size} 个卡组</span>
+          <button
+            type="button"
+            className="button button-danger"
+            disabled={selectedDeckIds.size === 0}
+            onClick={handleBulkDeleteDecks}
+          >
+            删除所选
+          </button>
+        </div>
+      )}
 
       {/* ── 卡组网格 ── */}
       <div className="deck-grid">
         {visibleDecks.map((deck) => {
           const st = deckStats[deck.id] ?? { total: 0, due: 0, newCount: 0 };
+          const isChecked = selectedDeckIds.has(deck.id);
           return (
             <div
               key={deck.id}
-              className={`deck-card ${deck.id === selectedDeckId ? 'deck-card-selected' : ''}`}
-              onClick={() => selectDeck(deck.id)}
+              className={`deck-card ${deck.id === selectedDeckId ? 'deck-card-selected' : ''} ${bulkMode && isChecked ? 'deck-card-bulk-selected' : ''}`}
+              onClick={() => (bulkMode ? toggleSelectDeck(deck.id) : selectDeck(deck.id))}
             >
+              {bulkMode && (
+                <label className="deck-card-checkbox" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => toggleSelectDeck(deck.id)}
+                  />
+                </label>
+              )}
               <div className="deck-card-body">
                 <div className="deck-card-name">{deck.name}</div>
                 <div className="deck-card-chips">
@@ -208,38 +276,40 @@ export const HomePage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="deck-card-actions" onClick={(e) => e.stopPropagation()}>
-                <Link
-                  to={`/deck/${deck.id}/study`}
-                  className="button button-primary deck-card-cta"
-                >
-                  开始复习
-                </Link>
-                <Link to={`/deck/${deck.id}/cards`} className="button button-ghost">
-                  管理卡片
-                </Link>
-                <button
-                  type="button"
-                  className="button button-ghost"
-                  onClick={() => handleDeckRename(deck.id)}
-                >
-                  重命名
-                </button>
-                <button
-                  type="button"
-                  className="button button-ghost"
-                  onClick={() => handleOpenExport(deck.id)}
-                >
-                  导出
-                </button>
-                <button
-                  type="button"
-                  className="button button-danger"
-                  onClick={() => handleDeckDelete(deck.id)}
-                >
-                  删除
-                </button>
-              </div>
+              {!bulkMode && (
+                <div className="deck-card-actions" onClick={(e) => e.stopPropagation()}>
+                  <Link
+                    to={`/deck/${deck.id}/study`}
+                    className="button button-primary deck-card-cta"
+                  >
+                    开始复习
+                  </Link>
+                  <Link to={`/deck/${deck.id}/cards`} className="button button-ghost">
+                    管理卡片
+                  </Link>
+                  <button
+                    type="button"
+                    className="button button-ghost"
+                    onClick={() => handleDeckRename(deck.id)}
+                  >
+                    重命名
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-ghost"
+                    onClick={() => handleOpenExport(deck.id)}
+                  >
+                    导出
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-danger"
+                    onClick={() => handleDeckDelete(deck.id)}
+                  >
+                    删除
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}

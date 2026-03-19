@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useFlashcard } from '../context/FlashcardContext';
+import { DEFAULT_SETTINGS } from '../domain/models';
 
 /* ── 小工具：格式化时间戳 ── */
 function fmtDate(ts: number | null): string {
@@ -29,14 +30,22 @@ const SettingRow: React.FC<{
 const SettingSection: React.FC<{
   title: string;
   icon: string;
+  collapsed: boolean;
+  onToggle: () => void;
   children: React.ReactNode;
-}> = ({ title, icon, children }) => (
+}> = ({ title, icon, collapsed, onToggle, children }) => (
   <section className="setting-section card-surface">
-    <h3 className="setting-section-title">
+    <button
+      type="button"
+      className="setting-section-title setting-section-toggle"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+    >
       <span className="setting-section-icon">{icon}</span>
-      {title}
-    </h3>
-    <div className="setting-section-body">{children}</div>
+      <span>{title}</span>
+      <span className={`setting-section-caret ${collapsed ? '' : 'expanded'}`}>▾</span>
+    </button>
+    {!collapsed && <div className="setting-section-body">{children}</div>}
   </section>
 );
 
@@ -57,6 +66,12 @@ export const SettingsPage: React.FC = () => {
   const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [exportCopied, setExportCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [collapsedMap, setCollapsedMap] = useState({
+    plan: true,
+    data: true,
+    ai: true,
+    about: true,
+  });
 
   /* 统计汇总 */
   const summary = useMemo(() => {
@@ -130,6 +145,15 @@ export const SettingsPage: React.FC = () => {
     clearAllData();
   };
 
+  const toggleSection = (key: keyof typeof collapsedMap) => {
+    setCollapsedMap((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleResetSettings = () => {
+    if (!window.confirm('确定要恢复“设置项”为默认值吗？不会删除卡组和学习数据。')) return;
+    updateSettings({ ...DEFAULT_SETTINGS });
+  };
+
   return (
     <div className="settings-page">
       <div className="settings-page-header">
@@ -138,7 +162,12 @@ export const SettingsPage: React.FC = () => {
       </div>
 
       {/* ── 学习默认值 ── */}
-      <SettingSection title="学习计划默认值" icon="📚">
+      <SettingSection
+        title="学习计划默认值"
+        icon="📚"
+        collapsed={collapsedMap.plan}
+        onToggle={() => toggleSection('plan')}
+      >
         <p className="setting-section-desc">
           以下为新建卡组时使用的默认值，不影响已有卡组。如需调整已有卡组的每日上限，可在该卡组的「管理卡片」页顶部单独修改。
         </p>
@@ -204,10 +233,21 @@ export const SettingsPage: React.FC = () => {
             <span className="setting-unit">张 / 天</span>
           </div>
         </SettingRow>
+        <div className="setting-divider" />
+        <SettingRow label="恢复默认设置" desc="将学习默认值与 AI 配置恢复为初始值">
+          <button type="button" className="button button-ghost" onClick={handleResetSettings}>
+            恢复默认设置
+          </button>
+        </SettingRow>
       </SettingSection>
 
       {/* ── 数据管理 ── */}
-      <SettingSection title="数据管理" icon="💾">
+      <SettingSection
+        title="数据管理"
+        icon="💾"
+        collapsed={collapsedMap.data}
+        onToggle={() => toggleSection('data')}
+      >
 
         {/* 数据概览 */}
         <div className="data-summary">
@@ -321,8 +361,47 @@ export const SettingsPage: React.FC = () => {
         </SettingRow>
       </SettingSection>
 
+      {/* ── AI 配置 ── */}
+      <SettingSection
+        title="AI 智能识别（豆包）"
+        icon="🤖"
+        collapsed={collapsedMap.ai}
+        onToggle={() => toggleSection('ai')}
+      >
+        <p className="setting-section-desc">
+          配置豆包大模型 API，用于实验室页面的图片智能识别制卡功能。
+          前往 <a href="https://console.volcengine.com/ark" target="_blank" rel="noreferrer" className="setting-link">火山引擎控制台</a> 获取 API Key 并开通视觉模型。
+        </p>
+        <SettingRow label="API Key" desc="豆包 / 火山引擎 ARK API Key">
+          <input
+            type="password"
+            className="input"
+            style={{ width: '100%', fontFamily: 'monospace' }}
+            placeholder="请输入 API Key"
+            value={settings.doubaoApiKey ?? ''}
+            onChange={(e) => updateSettings({ doubaoApiKey: e.target.value })}
+          />
+        </SettingRow>
+        <div className="setting-divider" />
+        <SettingRow label="Endpoint ID" desc="在控制台「在线推理」创建接入点后获得，格式为 ep-xxxxxxxx">
+          <input
+            type="text"
+            className="input"
+            style={{ width: '100%', fontFamily: 'monospace' }}
+            placeholder="ep-20250314-xxxxxxxx（从控制台复制）"
+            value={settings.doubaoModel ?? ''}
+            onChange={(e) => updateSettings({ doubaoModel: e.target.value })}
+          />
+        </SettingRow>
+      </SettingSection>
+
       {/* ── 关于 ── */}
-      <SettingSection title="关于" icon="ℹ️">
+      <SettingSection
+        title="关于"
+        icon="ℹ️"
+        collapsed={collapsedMap.about}
+        onToggle={() => toggleSection('about')}
+      >
         <div className="about-body">
           <div className="about-row">
             <span className="about-key">应用名称</span>

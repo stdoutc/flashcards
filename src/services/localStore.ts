@@ -20,6 +20,13 @@ export function loadState(): FlashcardState {
     if (!parsed.settings) {
       parsed.settings = { ...DEFAULT_SETTINGS };
     }
+    // 向前兼容：旧版本没有豆包配置字段
+    if (parsed.settings.doubaoApiKey === undefined) {
+      parsed.settings.doubaoApiKey = '';
+    }
+    if (parsed.settings.doubaoModel === undefined) {
+      parsed.settings.doubaoModel = DEFAULT_SETTINGS.doubaoModel;
+    }
     // 向前兼容：旧版本有 correctReviews，直接丢弃
     if (parsed.stats && 'correctReviews' in parsed.stats) {
       delete (parsed.stats as Record<string, unknown>).correctReviews;

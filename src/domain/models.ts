@@ -48,6 +48,8 @@ export interface StudyStats {
 export interface AppSettings {
   defaultNewPerDay: number;
   defaultReviewPerDay: number;
+  doubaoApiKey: string;
+  doubaoModel: string;
 }
 
 export interface FlashcardState {
@@ -61,6 +63,8 @@ export interface FlashcardState {
 export const DEFAULT_SETTINGS: AppSettings = {
   defaultNewPerDay: 20,
   defaultReviewPerDay: 100,
+  doubaoApiKey: '',
+  doubaoModel: 'doubao-1-5-vision-pro-32k-250115',
 };
 
 export function createEmptyState(): FlashcardState {
@@ -75,4 +79,3 @@ export function createEmptyState(): FlashcardState {
     settings: { ...DEFAULT_SETTINGS },
   };
 }
-

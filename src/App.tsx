@@ -6,6 +6,7 @@ import { CardEditPage } from './pages/CardEditPage';
 import { StudyPage } from './pages/StudyPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { StatsPage } from './pages/StatsPage';
+import { LabPage } from './pages/LabPage';
 import { IS_DEBUG } from './features/decks/useFlashcardApp';
 import { DebugPanel } from './debug/DebugPanel';
 
@@ -39,6 +40,14 @@ export const App: React.FC = () => {
                 统计
               </NavLink>
               <NavLink
+                to="/lab"
+                className={({ isActive }) =>
+                  `app-nav-link ${isActive ? 'active' : ''}`
+                }
+              >
+                实验室
+              </NavLink>
+              <NavLink
                 to="/settings"
                 className={({ isActive }) =>
                   `app-nav-link ${isActive ? 'active' : ''}`
@@ -54,6 +63,7 @@ export const App: React.FC = () => {
               <Route path="/deck/:deckId/cards" element={<CardEditPage />} />
               <Route path="/deck/:deckId/study" element={<StudyPage />} />
               <Route path="/stats" element={<StatsPage />} />
+              <Route path="/lab" element={<LabPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </main>

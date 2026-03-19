@@ -264,15 +264,37 @@ export const StatsPage: React.FC = () => {
           {/* ── 最近 14 天学习量 ── */}
           <StatSection title="最近 14 天学习量" icon="📅">
             {(() => {
+              const niceStep = (raw: number): number => {
+                if (raw <= 0) return 1;
+                const exp = Math.floor(Math.log10(raw));
+                const base = raw / Math.pow(10, exp);
+                const niceBase = base <= 1 ? 1 : base <= 2 ? 2 : base <= 5 ? 5 : 10;
+                return niceBase * Math.pow(10, exp);
+              };
+
               const W = 560;
               const H = 150;
               const PAD_TOP = 12;
               const PAD_BOTTOM = 28;
+              const PAD_LEFT = 36;
+              const PAD_RIGHT = 8;
               const chartH = H - PAD_TOP - PAD_BOTTOM;
+              const chartW = W - PAD_LEFT - PAD_RIGHT;
               const maxVal = Math.max(1, ...dailyActivity.map((d) => d.count));
+              const targetSegments = 4;
+              const step = niceStep(maxVal / targetSegments);
+              const axisMax = Math.max(step * targetSegments, Math.ceil(maxVal / step) * step);
+              const yTicks = Array.from({ length: targetSegments + 1 }, (_, i) => {
+                const value = i * step;
+                const ratio = value / axisMax;
+                return {
+                  value,
+                  y: PAD_TOP + (1 - ratio) * chartH,
+                };
+              });
               const pts = dailyActivity.map((d, i) => ({
-                x: (i / (dailyActivity.length - 1)) * W,
-                y: PAD_TOP + (1 - d.count / maxVal) * chartH,
+                x: PAD_LEFT + (i / (dailyActivity.length - 1)) * chartW,
+                y: PAD_TOP + (1 - d.count / axisMax) * chartH,
                 label: d.label.replace('-', '/'),
                 count: d.count,
                 idx: i,
@@ -288,7 +310,7 @@ export const StatsPage: React.FC = () => {
               // tooltip 框宽高
               const TW = 72; const TH = 30;
               // tooltip 框左上角坐标，防止超出右侧/顶部/左侧
-              const tx = Math.max(0, Math.min(hovPt ? hovPt.x - TW / 2 : 0, W - TW));
+              const tx = Math.max(PAD_LEFT, Math.min(hovPt ? hovPt.x - TW / 2 : 0, W - TW));
               const ty = hovPt ? Math.max(0, hovPt.y - TH - 10) : 0;
 
               return (
@@ -303,6 +325,47 @@ export const StatsPage: React.FC = () => {
                       <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
                     </linearGradient>
                   </defs>
+
+                  {/* Y 轴网格线与刻度 */}
+                  {yTicks.map((t, i) => (
+                    <g key={`y-tick-${i}`}>
+                      <line
+                        x1={PAD_LEFT}
+                        y1={t.y}
+                        x2={W - PAD_RIGHT}
+                        y2={t.y}
+                        stroke="rgba(148,163,184,0.16)"
+                        strokeWidth={1}
+                      />
+                      <text
+                        x={PAD_LEFT - 6}
+                        y={t.y + 4}
+                        textAnchor="end"
+                        fontSize={10}
+                        fill="rgba(148,163,184,0.85)"
+                      >
+                        {t.value}
+                      </text>
+                    </g>
+                  ))}
+
+                  {/* 坐标轴 */}
+                  <line
+                    x1={PAD_LEFT}
+                    y1={PAD_TOP}
+                    x2={PAD_LEFT}
+                    y2={PAD_TOP + chartH}
+                    stroke="rgba(148,163,184,0.3)"
+                    strokeWidth={1}
+                  />
+                  <line
+                    x1={PAD_LEFT}
+                    y1={PAD_TOP + chartH}
+                    x2={W - PAD_RIGHT}
+                    y2={PAD_TOP + chartH}
+                    stroke="rgba(148,163,184,0.3)"
+                    strokeWidth={1}
+                  />
 
                   {/* 填充区域 */}
                   <path d={fillD} fill="url(#lineGrad)" />
@@ -349,8 +412,8 @@ export const StatsPage: React.FC = () => {
                           className="stat-line-dot"
                           cx={p.x}
                           cy={p.y}
-                          r={isHovered ? 5 : p.count > 0 ? 3.5 : 2.5}
-                          opacity={p.count > 0 ? 1 : 0.35}
+                          r={isHovered ? 5 : 3.5}
+                          opacity={1}
                           stroke={isHovered ? '#fff' : 'none'}
                           strokeWidth={isHovered ? 1.5 : 0}
                         />
