@@ -2027,6 +2027,25 @@ a.button { text-decoration: none; }
   padding: 0 0 40px;
 }
 
+.lab-menu {
+  max-width: 720px;
+  margin-top: 10px;
+}
+.lab-menu-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lab-menu-item {
+  justify-content: center;
+}
+.lab-menu-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
 .lab-header {
   margin-bottom: 24px;
 }

@@ -7,6 +7,7 @@ import { StudyPage } from './pages/StudyPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { StatsPage } from './pages/StatsPage';
 import { LabPage } from './pages/LabPage';
+import { LabHomePage } from './pages/LabHomePage';
 import { IS_DEBUG } from './features/decks/useFlashcardApp';
 import { DebugPanel } from './debug/DebugPanel';
 
@@ -63,7 +64,8 @@ export const App: React.FC = () => {
               <Route path="/deck/:deckId/cards" element={<CardEditPage />} />
               <Route path="/deck/:deckId/study" element={<StudyPage />} />
               <Route path="/stats" element={<StatsPage />} />
-              <Route path="/lab" element={<LabPage />} />
+              <Route path="/lab" element={<LabHomePage />} />
+              <Route path="/lab/ai" element={<LabPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </main>
