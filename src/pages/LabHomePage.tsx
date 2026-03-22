@@ -29,7 +29,7 @@ export const LabHomePage: React.FC = () => {
 
           <div className="lab-menu-desc-block">
             <p className="lab-menu-desc">
-              树形单向边（父→子）：切换起始后上方仅显示下一级子节点；已用卡片不可重复添加。
+              首张加入为树根；树形单向边（父→子）；联想窗口从树根先序遍历。已用卡片不可重复添加。
             </p>
           </div>
         </div>

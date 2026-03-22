@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { CardRenderer } from '../components/CardRenderer';
 import { useFlashcard } from '../context/FlashcardContext';
 import type { Card } from '../domain/models';
+import { AssocTreeMiniMap } from '../components/AssocTreeMiniMap';
+import { openAssocRecallWindow } from './LabAssocRecallPage';
 
 /** 无向边（旧版） */
 type AssocEdge = { a: string; b: string };
@@ -41,15 +43,6 @@ function truncate(s: string, n: number): string {
   const t = (s ?? '').trim();
   if (!t) return '';
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
-}
-
-/** 从子节点映射得到 parent[child] */
-function buildParentMap(children: Record<string, string[]>): Map<string, string> {
-  const m = new Map<string, string>();
-  for (const [p, arr] of Object.entries(children)) {
-    for (const c of arr) m.set(c, p);
-  }
-  return m;
 }
 
 /** 收集树中全部节点 id */
@@ -153,9 +146,6 @@ export const LabAssocPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const [recallStartId, setRecallStartId] = useState<string>('');
-  const [recallPath, setRecallPath] = useState<string[]>([]);
-
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const focusCardRef = useRef<HTMLDivElement | null>(null);
   const topCardRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
@@ -179,8 +169,6 @@ export const LabAssocPage: React.FC = () => {
     [rootId, childrenMap],
   );
 
-  const parentMap = useMemo(() => buildParentMap(childrenMap), [childrenMap]);
-
   const usedSet = treeNodes;
 
   const nodesInGraph = useMemo(() => [...treeNodes], [treeNodes]);
@@ -192,9 +180,9 @@ export const LabAssocPage: React.FC = () => {
   }, [cardsOfDeck, searchQuery]);
 
   const listCards = useMemo(() => {
-    if (!focusId) return filteredCards;
+    if (!rootId) return filteredCards;
     return filteredCards.filter((c) => !usedSet.has(c.id));
-  }, [filteredCards, focusId, usedSet]);
+  }, [filteredCards, rootId, usedSet]);
 
   const directedEdges = useMemo(() => {
     const out: { parent: string; child: string }[] = [];
@@ -219,20 +207,16 @@ export const LabAssocPage: React.FC = () => {
     [childrenMap],
   );
 
-  const setInitialFocus = (id: string) => {
-    setRootId(id);
-    setFocusId(id);
-    setChildrenMap({});
-    setRecallStartId('');
-    setRecallPath([]);
-    showFeedback('已设置起始卡片；新卡片将作为子节点连到当前起始（单向）');
-  };
-
-  const addCardToTop = (id: string) => {
-    if (!focusId || !rootId) {
-      showFeedback('请先指定一张起始卡片');
+  /** 首张卡片自动成为树根；之后作为当前起始的子节点加入 */
+  const addCardToGraph = (id: string) => {
+    if (!rootId) {
+      setRootId(id);
+      setFocusId(id);
+      setChildrenMap({});
+      showFeedback('首张卡片已作为树根（联想模式默认从此张开始）');
       return;
     }
+    if (!focusId) return;
     if (usedSet.has(id)) {
       showFeedback('该卡片已使用，不能重复添加');
       return;
@@ -258,16 +242,12 @@ export const LabAssocPage: React.FC = () => {
 
   const removeDirectedEdge = (parentId: string, childId: string) => {
     setChildrenMap((prev) => removeChildSubtree(prev, parentId, childId));
-    setRecallStartId('');
-    setRecallPath([]);
   };
 
   const clearAll = () => {
     setRootId(null);
     setFocusId(null);
     setChildrenMap({});
-    setRecallStartId('');
-    setRecallPath([]);
     setSearchQuery('');
     try {
       localStorage.removeItem(storageKey);
@@ -281,14 +261,12 @@ export const LabAssocPage: React.FC = () => {
     setRootId(null);
     setFocusId(null);
     setChildrenMap({});
-    setRecallStartId('');
-    setRecallPath([]);
     try {
       localStorage.removeItem(storageKey);
     } catch {
       // ignore
     }
-    showFeedback('已重置，请重新选择起始卡片');
+    showFeedback('已清空图谱，请重新添加首张卡片');
   };
 
   const measureWires = useCallback(() => {
@@ -317,7 +295,7 @@ export const LabAssocPage: React.FC = () => {
 
   useLayoutEffect(() => {
     measureWires();
-  }, [measureWires, childrenMap, feedback, recallPath]);
+  }, [measureWires, childrenMap, feedback]);
 
   useEffect(() => {
     const ws = workspaceRef.current;
@@ -347,8 +325,6 @@ export const LabAssocPage: React.FC = () => {
         setRootId(null);
         setFocusId(null);
         setChildrenMap({});
-        setRecallStartId('');
-        setRecallPath([]);
         return;
       }
       const parsed = JSON.parse(raw) as
@@ -375,8 +351,6 @@ export const LabAssocPage: React.FC = () => {
           setFocusId(null);
           setChildrenMap({});
         }
-        setRecallStartId('');
-        setRecallPath([]);
         return;
       }
 
@@ -398,8 +372,6 @@ export const LabAssocPage: React.FC = () => {
           setFocusId(null);
           setChildrenMap({});
         }
-        setRecallStartId('');
-        setRecallPath([]);
         return;
       }
 
@@ -417,8 +389,6 @@ export const LabAssocPage: React.FC = () => {
           setFocusId(null);
           setChildrenMap({});
         }
-        setRecallStartId('');
-        setRecallPath([]);
         return;
       }
 
@@ -441,8 +411,6 @@ export const LabAssocPage: React.FC = () => {
           setFocusId(null);
           setChildrenMap({});
         }
-        setRecallStartId('');
-        setRecallPath([]);
         return;
       }
     } catch {
@@ -485,45 +453,30 @@ export const LabAssocPage: React.FC = () => {
     }
   }, [deckId, childrenMap, focusId, rootId, storageKey]);
 
-  const startRecall = () => {
-    if (!recallStartId) return;
-    setRecallPath([recallStartId]);
+  const openRecallWindow = () => {
+    if (!rootId) return;
+    const w = openAssocRecallWindow(deckId, rootId, childrenMap);
+    if (!w) showFeedback('无法打开新窗口，请允许本站弹窗后重试');
   };
 
-  const currentRecallId = recallPath.length > 0 ? recallPath[recallPath.length - 1] : '';
-
-  /** 树上相邻：父 + 子 */
-  const neighbors = useMemo(() => {
-    if (!currentRecallId) return [];
-    const out: string[] = [];
-    const p = parentMap.get(currentRecallId);
-    if (p) out.push(p);
-    for (const c of childrenMap[currentRecallId] ?? []) out.push(c);
-    const allowed = new Set(nodesInGraph);
-    return out.filter((id) => allowed.has(id));
-  }, [currentRecallId, childrenMap, parentMap, nodesInGraph]);
-
-  const onPickRecallNext = (id: string) => {
-    if (!id) return;
-    setRecallPath((prev) => [...prev, id]);
-  };
-
-  const recallCard = cardById.get(currentRecallId) ?? null;
-  const recallStartCard = cardById.get(recallStartId) ?? null;
-
-  const selectedForRecall = useMemo(
-    () => nodesInGraph.map((id) => cardById.get(id)).filter(Boolean) as Card[],
-    [nodesInGraph, cardById],
+  const focusNodeFromMiniMap = useCallback(
+    (id: string) => {
+      if (!treeNodes.has(id)) return;
+      setFocusId(id);
+      showFeedback('已切换到该起始节点');
+    },
+    [treeNodes, showFeedback],
   );
 
   const focusCard = focusId ? cardById.get(focusId) : null;
+  const rootCard = rootId ? cardById.get(rootId) : null;
 
   return (
     <div className="lab-page">
       <div className="lab-header">
         <h2 className="lab-title">🧠 知识联想图谱</h2>
         <p className="lab-subtitle">
-          数据结构为<strong>树</strong>（单向：父→子）。新卡片作为当前起始的子节点连边；切换起始后，上方<strong>仅显示下一级子节点</strong>。每节点最多 {MAX_CHILDREN} 个子节点。
+          数据结构为<strong>树</strong>（单向：父→子）。<strong>首张加入的卡片</strong>为树根；之后新卡片作为当前起始的子节点连边。切换起始后，上方仅显示下一级子节点。每节点最多 {MAX_CHILDREN} 个子节点。
         </p>
       </div>
 
@@ -548,8 +501,6 @@ export const LabAssocPage: React.FC = () => {
               setRootId(null);
               setFocusId(null);
               setChildrenMap({});
-              setRecallStartId('');
-              setRecallPath([]);
             }}
           >
             {state.decks.map((d) => (
@@ -571,12 +522,12 @@ export const LabAssocPage: React.FC = () => {
             />
           </div>
 
-          {!focusId && (
+          {!rootId && (
             <p className="hint small" style={{ marginTop: 10 }}>
-              请先在列表中选一卡作为<strong>树根 / 起始卡片</strong>（显示在右侧下方）。
+              点击<strong>「加入图谱（首张）」</strong>将所选卡作为树根（联想模式默认从该张先序遍历整棵树）。
             </p>
           )}
-          {focusId && (
+          {rootId && (
             <p className="hint small" style={{ marginTop: 10 }}>
               以下为尚未加入树的卡片；已加入的不可重复添加。
             </p>
@@ -584,35 +535,20 @@ export const LabAssocPage: React.FC = () => {
 
           <div className="lab-assoc-results lab-assoc-results-left" role="list">
             {cardsOfDeck.length === 0 && <p className="hint">该卡组暂无卡片。</p>}
-            {!focusId &&
-              listCards.map((c) => (
-                <article key={c.id} className="lab-assoc-result-card" role="listitem">
-                  <AssocCardSnippet card={c} />
-                  <button
-                    type="button"
-                    className="button button-primary lab-assoc-result-btn"
-                    onClick={() => setInitialFocus(c.id)}
-                  >
-                    设为起始卡片
-                  </button>
-                </article>
-              ))}
+            {listCards.map((c) => (
+              <article key={c.id} className="lab-assoc-result-card" role="listitem">
+                <AssocCardSnippet card={c} />
+                <button
+                  type="button"
+                  className="button button-primary lab-assoc-result-btn"
+                  onClick={() => addCardToGraph(c.id)}
+                >
+                  {!rootId ? '加入图谱（首张）' : '添加为子节点'}
+                </button>
+              </article>
+            ))}
 
-            {focusId &&
-              listCards.map((c) => (
-                <article key={c.id} className="lab-assoc-result-card" role="listitem">
-                  <AssocCardSnippet card={c} />
-                  <button
-                    type="button"
-                    className="button button-primary lab-assoc-result-btn"
-                    onClick={() => addCardToTop(c.id)}
-                  >
-                    添加为子节点
-                  </button>
-                </article>
-              ))}
-
-            {focusId && listCards.length === 0 && (
+            {rootId && listCards.length === 0 && (
               <p className="hint small">没有可添加的卡片（全部已加入或搜索无结果）。</p>
             )}
           </div>
@@ -626,6 +562,27 @@ export const LabAssocPage: React.FC = () => {
 
         <section className="lab-assoc-panel card-surface lab-assoc-panel-graph lab-assoc-panel-graph-wireframe">
           <h3 className="lab-section-title">联想图（树）</h3>
+
+          {rootId && treeNodes.size > 0 && (
+            <AssocTreeMiniMap
+              className="lab-assoc-minimap-wrap"
+              rootId={rootId}
+              children={childrenMap}
+              focusId={focusId}
+              getLabel={(id) =>
+                truncate(cardById.get(id)?.front ?? cardById.get(id)?.back ?? id, 10)
+              }
+              getTitle={(id) => {
+                const c = cardById.get(id);
+                if (!c) return id;
+                const f = (c.front ?? '').trim();
+                const b = (c.back ?? '').trim();
+                return b ? `${f}\n——\n${b}` : f;
+              }}
+              onNodeClick={focusNodeFromMiniMap}
+              caption="关系缩略图"
+            />
+          )}
 
           {focusId && focusCard ? (
             <>
@@ -652,10 +609,6 @@ export const LabAssocPage: React.FC = () => {
                     const pf = wirePoints[focusId];
                     const pt = wirePoints[cid];
                     if (!pf || !pt) return null;
-                    const hot =
-                      recallPath.length > 0 &&
-                      (recallPath[recallPath.length - 1] === focusId ||
-                        recallPath[recallPath.length - 1] === cid);
                     return (
                       <line
                         key={`${focusId}-${cid}`}
@@ -663,8 +616,8 @@ export const LabAssocPage: React.FC = () => {
                         y1={pf.y}
                         x2={pt.x}
                         y2={pt.y}
-                        stroke={hot ? 'rgba(56,189,248,0.95)' : 'rgba(129,140,248,0.65)'}
-                        strokeWidth={hot ? 2.6 : 1.9}
+                        stroke="rgba(129,140,248,0.65)"
+                        strokeWidth={1.9}
                         strokeLinecap="round"
                         markerEnd="url(#lab-assoc-arrow)"
                       />
@@ -776,93 +729,21 @@ export const LabAssocPage: React.FC = () => {
               </div>
 
               <div className="lab-assoc-recall">
-                <div className="lab-assoc-edge-title">联想记忆</div>
-                <div className="lab-assoc-recall-row">
-                  <select
-                    className="input"
-                    value={recallStartId}
-                    onChange={(e) => setRecallStartId(e.target.value)}
-                    disabled={nodesInGraph.length === 0}
-                  >
-                    <option value="">选择起点卡片</option>
-                    {selectedForRecall.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {truncate(c.front || c.back || '', 32)}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="button button-primary"
-                    disabled={!recallStartId}
-                    onClick={startRecall}
-                  >
-                    开始联想
-                  </button>
-                </div>
-
-                {recallPath.length > 0 && recallCard && (
-                  <div className="lab-assoc-recall-body">
-                    <div className="lab-assoc-recall-current">
-                      <div className="lab-assoc-recall-current-title">当前卡片</div>
-                      <div className="lab-assoc-recall-current-text">
-                        <CardRenderer content={recallCard.front} compact />
-                      </div>
-                    </div>
-                    <div className="lab-assoc-recall-neighbors">
-                      <div className="lab-assoc-recall-current-title">相邻（父 / 子）</div>
-                      {neighbors.length === 0 ? (
-                        <p className="hint small">没有相邻节点。</p>
-                      ) : (
-                        <div className="lab-assoc-neighbor-grid">
-                          {neighbors.map((nid) => {
-                            const c = cardById.get(nid);
-                            return (
-                              <button
-                                key={nid}
-                                type="button"
-                                className="button button-ghost lab-assoc-neighbor-btn"
-                                onClick={() => onPickRecallNext(nid)}
-                              >
-                                {truncate(c?.front || c?.back || '', 28)}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="lab-assoc-recall-path">
-                      <div className="lab-assoc-recall-current-title">联想路径</div>
-                      <div className="lab-assoc-path-chips">
-                        {recallPath.map((id) => {
-                          const c = cardById.get(id);
-                          return (
-                            <span key={id} className="chip" title={c?.front || c?.back || ''}>
-                              {truncate(c?.front || c?.back || '', 14)}
-                            </span>
-                          );
-                        })}
-                      </div>
-                      <button
-                        type="button"
-                        className="button button-ghost"
-                        onClick={() => {
-                          setRecallPath([]);
-                          setRecallStartId(recallStartId);
-                        }}
-                        style={{ marginTop: 10 }}
-                      >
-                        重新开始
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {recallPath.length === 0 && recallStartCard && (
-                  <p className="hint small" style={{ marginTop: 8 }}>
-                    已选起点：{truncate(recallStartCard.front || recallStartCard.back || '', 48)}
-                    ，点击「开始联想」后沿树边记忆。
+                <div className="lab-assoc-edge-title">联想模式（新窗口）</div>
+                <p className="hint small" style={{ marginBottom: 10 }}>
+                  从<strong>树根</strong>起在子卡网格中联想；新窗口内可先翻面再选子卡。上方缩略图可总览关系并点击节点快速定位。
+                </p>
+                <button
+                  type="button"
+                  className="button button-primary"
+                  disabled={!rootId || nodesInGraph.length === 0}
+                  onClick={openRecallWindow}
+                >
+                  打开联想窗口
+                </button>
+                {rootCard && (
+                  <p className="hint small" style={{ marginTop: 10 }}>
+                    树根（联想起点）：{truncate(rootCard.front || rootCard.back || '', 48)}
                   </p>
                 )}
               </div>
@@ -870,7 +751,7 @@ export const LabAssocPage: React.FC = () => {
           ) : (
             <div className="lab-assoc-placeholder">
               <div className="lab-assoc-placeholder-icon">📋</div>
-              <p className="lab-assoc-placeholder-text">请先在左侧选择一张卡片作为起始卡片</p>
+              <p className="lab-assoc-placeholder-text">请先在左侧将一张卡片「加入图谱」作为首张（树根）</p>
             </div>
           )}
         </section>

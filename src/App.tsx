@@ -9,6 +9,7 @@ import { StatsPage } from './pages/StatsPage';
 import { LabPage } from './pages/LabPage';
 import { LabHomePage } from './pages/LabHomePage';
 import { LabAssocPage } from './pages/LabAssocPage';
+import { LabAssocRecallPage } from './pages/LabAssocRecallPage';
 import { IS_DEBUG } from './features/decks/useFlashcardApp';
 import { DebugPanel } from './debug/DebugPanel';
 
@@ -68,6 +69,7 @@ export const App: React.FC = () => {
               <Route path="/lab" element={<LabHomePage />} />
               <Route path="/lab/ai" element={<LabPage />} />
               <Route path="/lab/assoc" element={<LabAssocPage />} />
+              <Route path="/lab/assoc/recall" element={<LabAssocRecallPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </main>

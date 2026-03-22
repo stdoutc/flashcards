@@ -2365,6 +2365,89 @@ a.button { text-decoration: none; }
   min-width: 0;
 }
 
+/* —— 知识联想树：关系缩略图（编辑 / 联想模式共用）—— */
+.lab-assoc-minimap-wrap {
+  margin-bottom: 14px;
+  padding: 12px 14px 10px;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.4);
+  border: 1px solid rgba(129, 140, 248, 0.2);
+}
+
+.lab-assoc-recall-minimap {
+  margin: 0 0 14px;
+  padding: 12px 14px 10px;
+}
+
+.assoc-minimap-caption {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 8px;
+  letter-spacing: 0.04em;
+}
+
+.assoc-minimap-svg {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  min-height: 120px;
+}
+
+.assoc-minimap-edge {
+  stroke: rgba(129, 140, 248, 0.42);
+  stroke-width: 0.85;
+  vector-effect: non-scaling-stroke;
+}
+
+.assoc-minimap-node-circle {
+  fill: rgba(30, 41, 59, 0.95);
+  stroke: rgba(148, 163, 184, 0.55);
+  stroke-width: 0.9;
+  cursor: default;
+  vector-effect: non-scaling-stroke;
+}
+
+.assoc-minimap-node-circle[tabindex='0'] {
+  cursor: pointer;
+}
+
+.assoc-minimap-node.is-root .assoc-minimap-node-circle {
+  stroke: rgba(56, 189, 248, 0.75);
+  stroke-width: 1.1;
+}
+
+.assoc-minimap-node.is-trail .assoc-minimap-node-circle {
+  stroke: rgba(52, 211, 153, 0.65);
+  fill: rgba(6, 78, 59, 0.35);
+}
+
+.assoc-minimap-node.is-focus .assoc-minimap-node-circle {
+  fill: rgba(76, 29, 149, 0.55);
+  stroke: rgba(196, 181, 253, 0.95);
+  stroke-width: 1.35;
+}
+
+.assoc-minimap-mark-ring {
+  fill: none;
+  stroke: rgba(34, 197, 94, 0.55);
+  stroke-width: 0.75;
+  stroke-dasharray: 2 2;
+  pointer-events: none;
+}
+
+.assoc-minimap-node-label {
+  font-size: 4.5px;
+  fill: rgba(226, 232, 240, 0.92);
+  font-weight: 600;
+}
+
+.assoc-minimap-hint {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  text-align: center;
+}
+
 .lab-assoc-target-bar {
   margin-bottom: 12px;
   padding: 12px 14px;
@@ -2708,6 +2791,408 @@ a.button { text-decoration: none; }
 
 .lab-assoc-panel-graph-wireframe .lab-assoc-placeholder {
   min-height: 360px;
+}
+
+/* —— 联想模式新窗口（堆叠 + 翻面）—— */
+.lab-assoc-recall-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 12px 16px 32px;
+}
+
+.lab-assoc-recall-inner {
+  padding: 24px;
+  text-align: center;
+}
+
+.lab-assoc-recall-error {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+}
+
+.lab-assoc-recall-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  justify-content: space-between;
+}
+
+.lab-assoc-recall-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.lab-assoc-recall-progress {
+  font-size: 0.88rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-assoc-recall-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.lab-assoc-recall-hint {
+  margin: 0 0 16px;
+  text-align: center;
+}
+
+.lab-assoc-recall-hint-note {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.82em;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.lab-assoc-recall-start-wrap {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.lab-assoc-recall-start-flip {
+  cursor: pointer;
+  outline: none;
+  border-radius: 16px;
+}
+
+.lab-assoc-recall-start-flip:focus-visible {
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.65);
+}
+
+.lab-assoc-recall-start-hint {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 0.88rem;
+}
+
+.lab-assoc-recall-stage {
+  min-height: 280px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-bottom: 24px;
+}
+
+.lab-assoc-recall-context {
+  margin: 0 0 12px;
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.lab-assoc-recall-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.lab-assoc-recall-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.55);
+  cursor: pointer;
+  /* 避免浏览器 button 默认 color: ButtonText 导致正文几乎不可见 */
+  color: var(--text);
+  font-family: inherit;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    transform 0.15s;
+  min-height: 120px;
+}
+
+.lab-assoc-recall-thumb:hover {
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.lab-assoc-recall-thumb.is-selected {
+  border-color: rgba(56, 189, 248, 0.85);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35);
+}
+
+.lab-assoc-recall-thumb-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(148, 163, 184, 0.95);
+  margin-bottom: 6px;
+}
+
+.lab-assoc-recall-thumb-md {
+  flex: 1;
+  min-height: 0;
+  max-height: var(--assoc-pick-max-h, 140px);
+  overflow: hidden;
+  font-size: var(--assoc-pick-font, 0.82rem);
+  line-height: 1.35;
+  text-align: left;
+}
+
+/* 子卡片内 Markdown：强制浅色正文（<button> 默认色会污染继承） */
+.lab-assoc-recall-thumb .lab-assoc-recall-thumb-md--markdown .md-content {
+  color: var(--text);
+  line-height: 1.5;
+}
+.lab-assoc-recall-thumb .lab-assoc-recall-thumb-md--markdown .md-content p,
+.lab-assoc-recall-thumb .lab-assoc-recall-thumb-md--markdown .md-content li,
+.lab-assoc-recall-thumb .lab-assoc-recall-thumb-md--markdown .md-content h1,
+.lab-assoc-recall-thumb .lab-assoc-recall-thumb-md--markdown .md-content h2,
+.lab-assoc-recall-thumb .lab-assoc-recall-thumb-md--markdown .md-content h3 {
+  color: var(--text);
+}
+.lab-assoc-recall-thumb .lab-assoc-recall-thumb-md--markdown .md-content strong {
+  color: #f8fafc;
+}
+.lab-assoc-recall-thumb .lab-assoc-recall-thumb-md--markdown .md-content em {
+  color: #e2e8f0;
+}
+.lab-assoc-recall-thumb .lab-assoc-recall-thumb-md--markdown .md-content a {
+  color: var(--accent);
+}
+.lab-assoc-recall-thumb .lab-assoc-recall-thumb-md--markdown .md-content .katex {
+  color: #f0f9ff;
+}
+
+.lab-assoc-recall-thumb-hint {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: rgba(56, 189, 248, 0.95);
+  font-weight: 600;
+}
+
+.lab-assoc-recall-grid--pick {
+  padding-top: 4px;
+  width: 100%;
+  max-width: min(100%, 900px);
+  /* 由 --assoc-pick-min 控制：子卡少时 min 大，多时小 */
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, var(--assoc-pick-min, 140px)), 1fr)
+  );
+}
+
+/* 仅 1 张时居中且略放宽 */
+.lab-assoc-recall-grid--pick[data-count='1'] {
+  grid-template-columns: minmax(0, min(100%, 520px));
+  justify-content: center;
+  max-width: 540px;
+}
+
+.lab-assoc-recall-grid--pick[data-count='2'] {
+  max-width: 720px;
+}
+
+.lab-assoc-recall-thumb--pick .lab-assoc-recall-thumb-hint {
+  color: rgba(148, 163, 184, 0.95);
+  font-weight: 500;
+}
+
+/* 联想模式：曾作为起始复习过的子卡（仅本会话内存，不写存储） */
+.lab-assoc-recall-thumb.is-reviewed {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.75) 0%, rgba(6, 78, 59, 0.22) 100%);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.12);
+}
+
+.lab-assoc-recall-thumb.is-reviewed:hover {
+  border-color: rgba(34, 197, 94, 0.65);
+}
+
+.lab-assoc-recall-reviewed-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(187, 247, 208, 0.98);
+  background: rgba(22, 101, 52, 0.55);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  vertical-align: middle;
+}
+
+.lab-assoc-recall-thumb.is-reviewed .lab-assoc-recall-thumb-hint {
+  color: rgba(134, 239, 172, 0.9);
+}
+
+.lab-assoc-recall-empty {
+  padding: 28px 20px;
+  text-align: center;
+  max-width: 360px;
+}
+
+.lab-assoc-recall-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.lab-assoc-recall-overlay-inner {
+  position: relative;
+  max-width: min(100%, 420px);
+  width: 100%;
+  outline: none;
+}
+
+.lab-assoc-flip-scene--overlay {
+  min-height: min(48vh, 360px);
+}
+
+.lab-assoc-flip-scene--overlay .lab-assoc-flip-inner {
+  min-height: min(48vh, 360px);
+}
+
+.lab-assoc-recall-overlay-hint {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 0.88rem;
+}
+
+.lab-assoc-recall-overlay-close {
+  display: block;
+  margin: 12px auto 0;
+}
+
+.lab-assoc-recall-stack-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.lab-assoc-recall-stack-back {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(100%, 360px);
+  height: min(52vh, 420px);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.lab-assoc-recall-stack-layer {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.65);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  transform: translate(
+      calc((var(--layer) + 1) * 5px),
+      calc((var(--layer) + 1) * -6px)
+    )
+    scale(calc(1 - (var(--layer) + 1) * 0.018));
+  opacity: calc(0.92 - (var(--layer) + 1) * 0.12);
+  z-index: calc(-1 * (var(--layer) + 1));
+}
+
+.lab-assoc-recall-active-wrap {
+  position: relative;
+  z-index: 2;
+  width: min(100%, 360px);
+  margin: 0 auto;
+  cursor: pointer;
+  outline: none;
+}
+
+.lab-assoc-recall-active-wrap:focus-visible {
+  border-radius: 16px;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.65);
+}
+
+.lab-assoc-flip-scene {
+  perspective: 1400px;
+  min-height: min(52vh, 400px);
+}
+
+.lab-assoc-flip-inner {
+  position: relative;
+  width: 100%;
+  min-height: min(52vh, 400px);
+  transform-style: preserve-3d;
+  transition: transform 0.55s cubic-bezier(0.4, 0.2, 0.2, 1);
+}
+
+.lab-assoc-flip-inner.is-flipped {
+  transform: rotateY(180deg);
+}
+
+.lab-assoc-flip-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  overflow: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.lab-assoc-flip-back {
+  transform: rotateY(180deg);
+}
+
+.lab-assoc-recall-face-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(148, 163, 184, 0.95);
+  margin-bottom: 8px;
+}
+
+.lab-assoc-recall-md {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  font-size: 0.92rem;
+}
+
+.lab-assoc-recall-tap-hint {
+  margin: 12px 0 0;
+  text-align: center;
+}
+
+.lab-assoc-recall-done {
+  text-align: center;
+  padding: 32px 24px;
+  max-width: 360px;
+}
+
+.lab-assoc-recall-done-icon {
+  font-size: 2.5rem;
+  margin-bottom: 8px;
+}
+
+.lab-assoc-recall-done-title {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+  color: var(--text);
 }
 
 .lab-header {
