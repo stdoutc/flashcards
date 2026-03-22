@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Link } from 'react-router-dom';
 import { useFlashcard } from '../context/FlashcardContext';
@@ -30,6 +30,7 @@ export const HomePage: React.FC = () => {
   // 导入卡组
   const [importJson, setImportJson] = useState('');
   const [importFileName, setImportFileName] = useState('');
+  const [importDropHover, setImportDropHover] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
 
   // 导出卡组
@@ -172,16 +173,52 @@ export const HomePage: React.FC = () => {
     closeModal();
   };
 
-  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const readImportFile = useCallback((file: File) => {
     setImportFileName(file.name);
     const reader = new FileReader();
     reader.onload = (ev) => {
       setImportJson((ev.target?.result as string) ?? '');
     };
     reader.readAsText(file);
+  }, []);
+
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) readImportFile(file);
     e.target.value = '';
+  };
+
+  const handleImportDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes('Files')) {
+      setImportDropHover(true);
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  };
+
+  const handleImportDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = e.relatedTarget as Node | null;
+    if (next && (e.currentTarget as HTMLElement).contains(next)) return;
+    setImportDropHover(false);
+  };
+
+  const handleImportDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes('Files')) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  };
+
+  const handleImportDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setImportDropHover(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) readImportFile(file);
   };
 
   return (
@@ -401,7 +438,14 @@ export const HomePage: React.FC = () => {
       {/* ── 模态框：导入卡组 ── */}
       <Modal open={modal === 'import'} title="导入卡组（JSON）" onClose={closeModal}>
         {/* 文件上传区 */}
-        <div className="import-file-zone" onClick={() => importFileRef.current?.click()}>
+        <div
+          className={`import-file-zone${importDropHover ? ' is-dragover' : ''}`}
+          onClick={() => importFileRef.current?.click()}
+          onDragEnter={handleImportDragEnter}
+          onDragLeave={handleImportDragLeave}
+          onDragOver={handleImportDragOver}
+          onDrop={handleImportDrop}
+        >
           <span className="import-file-icon">📂</span>
           <span className="import-file-text">
             {importFileName ? importFileName : '点击选择 .json 文件，或将文件拖到此处'}

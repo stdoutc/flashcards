@@ -77,10 +77,33 @@ body {
   margin: 0 auto;
 }
 
+/* 知识联想图谱：主区域纵向撑满，便于左侧列表拉满 */
+.app-main.app-main--lab-assoc {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+/* 联想模式：主区域全宽，与页头组成整屏布局 */
+.app-main.app-main--assoc-recall {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px 12px;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 @media (min-width: 768px) {
   .app-header { padding-inline: 32px; }
   .app-header h1 { font-size: 22px; }
   .app-main { padding: 24px 32px 40px; }
+  .app-main.app-main--assoc-recall {
+    padding: 10px 20px 16px;
+  }
 }
 
 /* ─── 通用卡片面板 ────────────────────────── */
@@ -1690,6 +1713,11 @@ a.button { text-decoration: none; }
   border-color: var(--accent);
   background: rgba(56,189,248,0.06);
 }
+.import-file-zone.is-dragover {
+  border-color: var(--accent);
+  background: rgba(56, 189, 248, 0.12);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.25) inset;
+}
 .import-file-icon { font-size: 20px; flex-shrink: 0; }
 .import-file-text {
   flex: 1;
@@ -2029,9 +2057,23 @@ a.button { text-decoration: none; }
 
 /* ===== 实验室页面 ===== */
 .lab-page {
+  position: relative;
   max-width: 1100px;
   margin: 0 auto;
   padding: 0 0 40px;
+}
+
+/** 知识联想图谱页：主区占满视口高度，便于左侧列表拉满 */
+.lab-page--assoc-graph {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+/** 底部有联想工具栏时，为内容留出空隙避免被遮挡 */
+.lab-page--assoc-toolbar {
+  padding-bottom: 88px;
 }
 
 .lab-menu {
@@ -2109,6 +2151,41 @@ a.button { text-decoration: none; }
   font-weight: 700;
   color: var(--text);
   margin: 14px 0 10px;
+}
+
+.lab-assoc-edge-details {
+  margin-top: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.2);
+  padding: 0 12px 12px;
+}
+
+.lab-assoc-edge-summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  padding: 12px 0 10px;
+  user-select: none;
+}
+
+.lab-assoc-edge-summary::-webkit-details-marker {
+  display: none;
+}
+
+.lab-assoc-edge-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 8px;
+  color: rgba(125, 211, 252, 0.85);
+  font-size: 0.85em;
+  transition: transform 0.15s ease;
+}
+
+.lab-assoc-edge-details[open] .lab-assoc-edge-summary::before {
+  transform: rotate(90deg);
 }
 
 .lab-assoc-edge-list {
@@ -2387,17 +2464,88 @@ a.button { text-decoration: none; }
   letter-spacing: 0.04em;
 }
 
+.assoc-minimap-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.assoc-minimap-zoom-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-right: 4px;
+}
+
+.assoc-minimap-tool-btn {
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 28px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.65);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.assoc-minimap-tool-btn:hover {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.assoc-minimap-viewport {
+  position: relative;
+  /* 与逻辑坐标 MAP_W:MAP_H 一致（见 AssocTreeMiniMap） */
+  aspect-ratio: 100 / 128;
+  width: 100%;
+  max-height: min(42vh, 420px);
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(2, 6, 23, 0.45);
+  touch-action: none;
+  cursor: grab;
+  overscroll-behavior: contain;
+}
+
+.assoc-minimap-viewport.is-grabbing {
+  cursor: grabbing;
+}
+
+.assoc-minimap-pan-layer {
+  cursor: inherit;
+}
+
 .assoc-minimap-svg {
   display: block;
+  position: relative;
+  z-index: 1;
   width: 100%;
-  max-height: 220px;
-  min-height: 120px;
+  height: 100%;
+  min-height: 0;
+  vertical-align: middle;
+}
+
+/* SVG 文字标签：与节点同一坐标系，缩放/平移时与圆保持相对位置不变 */
+.assoc-minimap-node-label {
+  pointer-events: none;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-weight: 600;
+  fill: rgba(240, 244, 250, 0.98);
 }
 
 .assoc-minimap-edge {
   stroke: rgba(129, 140, 248, 0.42);
   stroke-width: 0.85;
   vector-effect: non-scaling-stroke;
+  pointer-events: none;
 }
 
 .assoc-minimap-node-circle {
@@ -2434,12 +2582,6 @@ a.button { text-decoration: none; }
   stroke-width: 0.75;
   stroke-dasharray: 2 2;
   pointer-events: none;
-}
-
-.assoc-minimap-node-label {
-  font-size: 4.5px;
-  fill: rgba(226, 232, 240, 0.92);
-  font-weight: 600;
 }
 
 .assoc-minimap-hint {
@@ -2633,14 +2775,45 @@ a.button { text-decoration: none; }
   align-items: stretch;
 }
 
+.lab-page--assoc-graph .lab-assoc-grid-wireframe {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 @media (min-width: 900px) {
   .lab-assoc-grid-wireframe {
     grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.5fr);
   }
 }
 
-.lab-assoc-panel-left .lab-assoc-results-left {
-  max-height: min(60vh, 640px);
+/* 左栏：列表区占满模块剩余高度（底部工具栏由 .lab-page--assoc-toolbar 预留） */
+.lab-assoc-panel-left {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.lab-assoc-panel-left .lab-assoc-results.lab-assoc-results-left {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 899px) {
+  .lab-page--assoc-graph .lab-assoc-grid-wireframe {
+    flex: 0 1 auto;
+  }
+
+  .lab-assoc-panel-left {
+    overflow: visible;
+  }
+
+  .lab-assoc-panel-left .lab-assoc-results.lab-assoc-results-left {
+    max-height: min(52vh, 560px);
+  }
 }
 
 .lab-assoc-workspace {
@@ -2793,11 +2966,263 @@ a.button { text-decoration: none; }
   min-height: 360px;
 }
 
-/* —— 联想模式新窗口（堆叠 + 翻面）—— */
+/* —— 联想模式：全屏路由页 / 图谱页底部浮动层 —— */
 .lab-assoc-recall-page {
   max-width: 640px;
   margin: 0 auto;
   padding: 12px 16px 32px;
+}
+
+/* 知识联想图谱页：底部固定工具栏（联想在新标签页打开） */
+.lab-assoc-bottom-toolbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1100;
+  padding: 0 max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  pointer-events: none;
+}
+
+.lab-assoc-bottom-toolbar-inner {
+  pointer-events: auto;
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 10px 14px;
+  border-radius: 12px 12px 0 0;
+  border: 1px solid rgba(129, 140, 248, 0.28);
+  border-bottom: none;
+  background: linear-gradient(to top, rgba(15, 23, 42, 0.97), rgba(15, 23, 42, 0.92));
+  backdrop-filter: blur(12px);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.lab-assoc-bottom-toolbar-lead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.lab-assoc-bottom-toolbar-icon {
+  font-size: 1.35rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.lab-assoc-bottom-toolbar-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lab-assoc-bottom-toolbar-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.lab-assoc-bottom-toolbar-sub {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.lab-assoc-bottom-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.lab-assoc-bottom-toolbar-btn {
+  box-shadow: 0 6px 20px rgba(56, 189, 248, 0.2);
+}
+
+.lab-assoc-bottom-toolbar-link {
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .lab-assoc-bottom-toolbar-inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .lab-assoc-bottom-toolbar-actions {
+    justify-content: stretch;
+  }
+
+  .lab-assoc-bottom-toolbar-actions .button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+.lab-assoc-recall-page--panel {
+  max-width: none;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px 12px;
+  margin: 0;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+.lab-assoc-recall-page--panel .lab-assoc-recall-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 -12px 8px;
+  padding: 10px 12px;
+  border-radius: 0;
+}
+
+.lab-assoc-recall-page--panel .lab-assoc-recall-main {
+  flex: 1;
+  min-height: 0;
+}
+
+.lab-assoc-recall-page--panel .lab-assoc-recall-minimap {
+  max-height: min(28vh, 280px);
+}
+
+.lab-assoc-recall-page--panel .assoc-minimap-viewport {
+  max-height: min(22vh, 220px);
+}
+
+.lab-assoc-recall-page--fullscreen {
+  max-width: none;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-recall-toolbar {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-recall-hint {
+  margin: 0 0 8px;
+  font-size: 0.84rem;
+  flex-shrink: 0;
+  text-align: left;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-recall-context {
+  margin: 0 0 6px;
+  flex-shrink: 0;
+}
+
+.lab-assoc-recall-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+/* 联想模式（新标签页）：左侧缩略图 + 右侧练习区 */
+.lab-assoc-recall-page--fullscreen .lab-assoc-recall-main--split {
+  display: grid;
+  grid-template-columns: minmax(220px, min(34vw, 400px)) minmax(0, 1fr);
+  gap: 16px 22px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .lab-assoc-recall-page--fullscreen .lab-assoc-recall-main--split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-recall-aside {
+  position: sticky;
+  top: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-recall-aside .lab-assoc-recall-minimap {
+  flex: 0 1 auto;
+  max-height: min(72vh, 720px);
+  min-height: 0;
+  margin: 0;
+  padding: 8px 12px 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-recall-aside .lab-assoc-recall-minimap .assoc-minimap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-recall-aside .assoc-minimap--recall .assoc-minimap-svg {
+  width: 100%;
+  min-height: min(28vh, 280px);
+  max-height: min(58vh, 560px);
+  flex: 1;
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-recall-aside .assoc-minimap-viewport {
+  max-height: min(52vh, 520px);
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-recall-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 4px 0 12px;
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-recall-start-wrap {
+  max-width: min(96vw, 920px);
+  width: 100%;
+  margin: 0 auto;
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-flip-scene.lab-assoc-recall-start-flip {
+  min-height: min(42vh, 560px);
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-flip-scene.lab-assoc-recall-start-flip .lab-assoc-flip-inner {
+  min-height: min(42vh, 560px);
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-recall-md {
+  font-size: clamp(0.95rem, 1.6vw, 1.12rem);
+}
+
+.lab-assoc-recall-page--fullscreen .lab-assoc-recall-grid--pick {
+  max-width: none;
+  width: 100%;
 }
 
 .lab-assoc-recall-inner {

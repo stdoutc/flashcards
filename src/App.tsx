@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Link, NavLink, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Link, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { FlashcardProvider } from './context/FlashcardContext';
 import { HomePage } from './pages/HomePage';
 import { CardEditPage } from './pages/CardEditPage';
@@ -12,6 +12,33 @@ import { LabAssocPage } from './pages/LabAssocPage';
 import { LabAssocRecallPage } from './pages/LabAssocRecallPage';
 import { IS_DEBUG } from './features/decks/useFlashcardApp';
 import { DebugPanel } from './debug/DebugPanel';
+
+/** 联想模式页占满主区域宽度与高度（需在 Router 内） */
+const AppMain: React.FC = () => {
+  const { pathname } = useLocation();
+  const assocRecallFull =
+    pathname === '/lab/assoc/recall' || pathname.endsWith('/lab/assoc/recall');
+  const labAssocGraphPage =
+    pathname === '/lab/assoc' ||
+    (pathname.endsWith('/lab/assoc') && !pathname.endsWith('/lab/assoc/recall'));
+  return (
+    <main
+      className={`app-main${assocRecallFull ? ' app-main--assoc-recall' : ''}${labAssocGraphPage ? ' app-main--lab-assoc' : ''}`}
+    >
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/deck/:deckId/cards" element={<CardEditPage />} />
+        <Route path="/deck/:deckId/study" element={<StudyPage />} />
+        <Route path="/stats" element={<StatsPage />} />
+        <Route path="/lab" element={<LabHomePage />} />
+        <Route path="/lab/ai" element={<LabPage />} />
+        <Route path="/lab/assoc" element={<LabAssocPage />} />
+        <Route path="/lab/assoc/recall" element={<LabAssocRecallPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+      </Routes>
+    </main>
+  );
+};
 
 export const App: React.FC = () => {
   return (
@@ -60,19 +87,7 @@ export const App: React.FC = () => {
               </NavLink>
             </nav>
           </header>
-          <main className="app-main">
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/deck/:deckId/cards" element={<CardEditPage />} />
-              <Route path="/deck/:deckId/study" element={<StudyPage />} />
-              <Route path="/stats" element={<StatsPage />} />
-              <Route path="/lab" element={<LabHomePage />} />
-              <Route path="/lab/ai" element={<LabPage />} />
-              <Route path="/lab/assoc" element={<LabAssocPage />} />
-              <Route path="/lab/assoc/recall" element={<LabAssocRecallPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Routes>
-          </main>
+          <AppMain />
           {IS_DEBUG && <DebugPanel />}
         </div>
       </FlashcardProvider>

@@ -453,11 +453,11 @@ export const LabAssocPage: React.FC = () => {
     }
   }, [deckId, childrenMap, focusId, rootId, storageKey]);
 
-  const openRecallWindow = () => {
+  const openRecallInNewTab = useCallback(() => {
     if (!rootId) return;
     const w = openAssocRecallWindow(deckId, rootId, childrenMap);
-    if (!w) showFeedback('无法打开新窗口，请允许本站弹窗后重试');
-  };
+    if (!w) showFeedback('无法打开新标签页，请允许本站弹窗后重试');
+  }, [deckId, rootId, childrenMap, showFeedback]);
 
   const focusNodeFromMiniMap = useCallback(
     (id: string) => {
@@ -469,10 +469,13 @@ export const LabAssocPage: React.FC = () => {
   );
 
   const focusCard = focusId ? cardById.get(focusId) : null;
-  const rootCard = rootId ? cardById.get(rootId) : null;
+
+  const showAssocBottomToolbar = Boolean(rootId && nodesInGraph.length > 0);
 
   return (
-    <div className="lab-page">
+    <div
+      className={`lab-page lab-page--assoc-graph${showAssocBottomToolbar ? ' lab-page--assoc-toolbar' : ''}`}
+    >
       <div className="lab-header">
         <h2 className="lab-title">🧠 知识联想图谱</h2>
         <p className="lab-subtitle">
@@ -702,51 +705,35 @@ export const LabAssocPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="lab-assoc-edge-list">
-                <div className="lab-assoc-edge-title">单向边列表（父 → 子，移除将删除子树）</div>
-                {directedEdges.length === 0 ? (
-                  <p className="hint small">添加子节点后将在此列出有向边。</p>
-                ) : (
-                  <div className="lab-assoc-edge-items">
-                    {directedEdges.map((e) => (
-                      <div key={`${e.parent}-${e.child}`} className="lab-assoc-edge-item">
-                        <span className="lab-assoc-edge-text">
-                          {truncate(cardById.get(e.parent)?.front ?? '', 20)}{' '}
-                          <span className="lab-assoc-edge-sep">→</span>{' '}
-                          {truncate(cardById.get(e.child)?.front ?? '', 20)}
-                        </span>
-                        <button
-                          type="button"
-                          className="button button-ghost button-sm"
-                          onClick={() => removeDirectedEdge(e.parent, e.child)}
-                        >
-                          移除
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="lab-assoc-recall">
-                <div className="lab-assoc-edge-title">联想模式（新窗口）</div>
-                <p className="hint small" style={{ marginBottom: 10 }}>
-                  从<strong>树根</strong>起在子卡网格中联想；新窗口内可先翻面再选子卡。上方缩略图可总览关系并点击节点快速定位。
-                </p>
-                <button
-                  type="button"
-                  className="button button-primary"
-                  disabled={!rootId || nodesInGraph.length === 0}
-                  onClick={openRecallWindow}
-                >
-                  打开联想窗口
-                </button>
-                {rootCard && (
-                  <p className="hint small" style={{ marginTop: 10 }}>
-                    树根（联想起点）：{truncate(rootCard.front || rootCard.back || '', 48)}
-                  </p>
-                )}
-              </div>
+              <details className="lab-assoc-edge-details">
+                <summary className="lab-assoc-edge-summary">
+                  单向边列表（父 → 子，移除将删除子树）
+                </summary>
+                <div className="lab-assoc-edge-list">
+                  {directedEdges.length === 0 ? (
+                    <p className="hint small">添加子节点后将在此列出有向边。</p>
+                  ) : (
+                    <div className="lab-assoc-edge-items">
+                      {directedEdges.map((e) => (
+                        <div key={`${e.parent}-${e.child}`} className="lab-assoc-edge-item">
+                          <span className="lab-assoc-edge-text">
+                            {truncate(cardById.get(e.parent)?.front ?? '', 20)}{' '}
+                            <span className="lab-assoc-edge-sep">→</span>{' '}
+                            {truncate(cardById.get(e.child)?.front ?? '', 20)}
+                          </span>
+                          <button
+                            type="button"
+                            className="button button-ghost button-sm"
+                            onClick={() => removeDirectedEdge(e.parent, e.child)}
+                          >
+                            移除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </details>
             </>
           ) : (
             <div className="lab-assoc-placeholder">
@@ -757,11 +744,41 @@ export const LabAssocPage: React.FC = () => {
         </section>
       </div>
 
-      <div style={{ marginTop: 18, textAlign: 'center' }}>
-        <Link to="/lab" className="button button-ghost">
-          返回实验室
-        </Link>
-      </div>
+      {!showAssocBottomToolbar && (
+        <div style={{ marginTop: 18, textAlign: 'center' }}>
+          <Link to="/lab" className="button button-ghost">
+            返回实验室
+          </Link>
+        </div>
+      )}
+
+      {showAssocBottomToolbar && (
+        <nav className="lab-assoc-bottom-toolbar" aria-label="知识联想图谱工具栏">
+          <div className="lab-assoc-bottom-toolbar-inner">
+            <div className="lab-assoc-bottom-toolbar-lead">
+              <span className="lab-assoc-bottom-toolbar-icon" aria-hidden>
+                🧠
+              </span>
+              <div className="lab-assoc-bottom-toolbar-text">
+                <span className="lab-assoc-bottom-toolbar-title">联想模式</span>
+                <span className="lab-assoc-bottom-toolbar-sub">新标签页 · 全屏练习</span>
+              </div>
+            </div>
+            <div className="lab-assoc-bottom-toolbar-actions">
+              <button
+                type="button"
+                className="button button-primary lab-assoc-bottom-toolbar-btn"
+                onClick={openRecallInNewTab}
+              >
+                在新标签页打开联想
+              </button>
+              <Link to="/lab" className="button button-ghost button-sm lab-assoc-bottom-toolbar-link">
+                返回实验室
+              </Link>
+            </div>
+          </div>
+        </nav>
+      )}
     </div>
   );
 };
