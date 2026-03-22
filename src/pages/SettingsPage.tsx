@@ -70,6 +70,7 @@ export const SettingsPage: React.FC = () => {
     plan: true,
     data: true,
     ai: true,
+    card: true,
     about: true,
   });
 
@@ -161,13 +162,14 @@ export const SettingsPage: React.FC = () => {
         <p className="settings-subtitle">学习计划、数据备份与应用信息</p>
       </div>
 
-      {/* ── 学习默认值 ── */}
+      {/* ── 复习设置 ── */}
       <SettingSection
-        title="学习计划默认值"
-        icon="📚"
+        title="复习设置"
+        icon="🔁"
         collapsed={collapsedMap.plan}
         onToggle={() => toggleSection('plan')}
       >
+        <h4 className="setting-subsection-title">学习计划默认值</h4>
         <p className="setting-section-desc">
           以下为新建卡组时使用的默认值，不影响已有卡组。如需调整已有卡组的每日上限，可在该卡组的「管理卡片」页顶部单独修改。
         </p>
@@ -234,10 +236,33 @@ export const SettingsPage: React.FC = () => {
           </div>
         </SettingRow>
         <div className="setting-divider" />
-        <SettingRow label="恢复默认设置" desc="将学习默认值与 AI 配置恢复为初始值">
+        <SettingRow label="恢复默认设置" desc="将复习计划默认值与 AI 配置恢复为初始值">
           <button type="button" className="button button-ghost" onClick={handleResetSettings}>
             恢复默认设置
           </button>
+        </SettingRow>
+      </SettingSection>
+
+      {/* ── 卡片管理设置 ── */}
+      <SettingSection
+        title="卡片管理设置"
+        icon="🗂️"
+        collapsed={collapsedMap.card}
+        onToggle={() => toggleSection('card')}
+      >
+        <SettingRow
+          label="卡片显示方式"
+          desc="影响卡片管理页的“卡片列表”显示：正反两面或只显示正面。"
+        >
+          <select
+            className="input"
+            value={settings.cardDisplayMode}
+            onChange={(e) => updateSettings({ cardDisplayMode: e.target.value as any })}
+            style={{ width: '100%' }}
+          >
+            <option value="both">正反两面都显示（默认）</option>
+            <option value="frontOnly">只显示正面</option>
+          </select>
         </SettingRow>
       </SettingSection>
 

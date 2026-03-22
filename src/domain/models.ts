@@ -45,11 +45,14 @@ export interface StudyStats {
   lastStudyAt: number | null;
 }
 
+export type CardDisplayMode = 'both' | 'frontOnly';
+
 export interface AppSettings {
   defaultNewPerDay: number;
   defaultReviewPerDay: number;
   doubaoApiKey: string;
   doubaoModel: string;
+  cardDisplayMode: CardDisplayMode;
 }
 
 export interface FlashcardState {
@@ -65,6 +68,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultReviewPerDay: 100,
   doubaoApiKey: '',
   doubaoModel: 'doubao-1-5-vision-pro-32k-250115',
+  cardDisplayMode: 'both',
 };
 
 export function createEmptyState(): FlashcardState {

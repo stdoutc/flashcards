@@ -277,7 +277,7 @@ export function useFlashcardApp(): AppViewModel {
         cards: parsed.cards,
         reviewLogs: parsed.reviewLogs ?? [],
         stats: parsed.stats ?? createEmptyState().stats,
-        settings: parsed.settings ?? { ...DEFAULT_SETTINGS },
+        settings: { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) },
       };
       setState(newState);
       setSelectedDeckId(newState.decks[0]?.id ?? null);

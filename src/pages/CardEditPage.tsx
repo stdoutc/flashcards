@@ -410,6 +410,7 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
 export const CardEditPage: React.FC = () => {
   const { deckId } = useParams<{ deckId: string }>();
   const { state, selectDeck, createCard, updateCard, deleteCard, deleteCards, updateDeck } = useFlashcard();
+  const cardDisplayMode = state.settings.cardDisplayMode ?? 'both';
 
   // 编辑 Modal 状态
   const [editorOpen, setEditorOpen] = useState(false);
@@ -680,9 +681,11 @@ export const CardEditPage: React.FC = () => {
                   <div className="card-front">
                     <CardRenderer content={card.front} compact />
                   </div>
+                {cardDisplayMode !== 'frontOnly' && (
                   <div className="card-back">
                     <CardRenderer content={card.back} compact />
                   </div>
+                )}
                   {card.tags?.length > 0 && (
                     <div className="tag-list" style={{ marginTop: 4 }}>
                       {card.tags.map((t) => (

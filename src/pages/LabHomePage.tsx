@@ -16,9 +16,22 @@ export const LabHomePage: React.FC = () => {
           <Link to="/lab/ai" className="button button-primary lab-menu-item">
             ① AI 图片识别制卡
           </Link>
-          <p className="lab-menu-desc">
-            上传图片（或截图后粘贴图片），AI 提取关键内容并生成闪卡草稿，支持你审核后导入卡组。
-          </p>
+
+          <div className="lab-menu-desc-block">
+            <p className="lab-menu-desc">
+              上传图片（或截图后粘贴图片），AI 提取关键内容并生成闪卡草稿，支持你审核后导入卡组。
+            </p>
+          </div>
+
+          <Link to="/lab/assoc" className="button button-primary lab-menu-item lab-menu-item-2">
+            ② 知识联想图谱（卡片关联记忆）
+          </Link>
+
+          <div className="lab-menu-desc-block">
+            <p className="lab-menu-desc">
+              选择卡组，挑选部分卡片建立无向图连接，再以连接逐步联想记忆。
+            </p>
+          </div>
         </div>
       </section>
     </div>

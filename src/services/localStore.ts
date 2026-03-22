@@ -27,6 +27,10 @@ export function loadState(): FlashcardState {
     if (parsed.settings.doubaoModel === undefined) {
       parsed.settings.doubaoModel = DEFAULT_SETTINGS.doubaoModel;
     }
+    // 向前兼容：旧版本没有卡片显示方式字段
+    if (parsed.settings.cardDisplayMode === undefined) {
+      parsed.settings.cardDisplayMode = DEFAULT_SETTINGS.cardDisplayMode;
+    }
     // 向前兼容：旧版本有 correctReviews，直接丢弃
     if (parsed.stats && 'correctReviews' in parsed.stats) {
       delete (parsed.stats as Record<string, unknown>).correctReviews;

@@ -26,6 +26,8 @@ export const DeckPage: React.FC = () => {
     importDeckJson,
   } = useFlashcardApp();
 
+  const cardDisplayMode = state.settings.cardDisplayMode ?? 'both';
+
   const [newDeckName, setNewDeckName] = useState('');
   const [deckFilter, setDeckFilter] = useState('');
   const [cardDraft, setCardDraft] = useState<CardDraft>({
@@ -341,7 +343,7 @@ export const DeckPage: React.FC = () => {
                 <div key={card.id} className="card-row">
                   <div className="card-row-main" onClick={() => handleEditCard(card)}>
                     <div className="card-front">{card.front}</div>
-                    <div className="card-back">{card.back}</div>
+                      {cardDisplayMode !== 'frontOnly' && <div className="card-back">{card.back}</div>}
                   </div>
                   <div className="card-row-actions">
                     <button

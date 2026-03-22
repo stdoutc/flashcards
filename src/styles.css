@@ -1359,6 +1359,13 @@ a.button { text-decoration: none; }
 .setting-label { font-size: 14px; font-weight: 600; }
 .setting-desc { font-size: 12px; color: var(--muted); }
 .setting-row-control { display: flex; align-items: center; flex-shrink: 0; }
+.setting-subsection-title {
+  margin: -6px 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
 
 /* 数字输入行（滑块 + 输入框 + 单位） */
 .setting-number-row {
@@ -2044,6 +2051,123 @@ a.button { text-decoration: none; }
   color: var(--muted);
   font-size: 0.85rem;
   line-height: 1.45;
+}
+
+.lab-menu-desc-block {
+  margin-top: 4px;
+}
+
+.lab-menu-item-2 {
+  margin-top: 6px;
+}
+
+/* ===== 知识联想（子页面）===== */
+.lab-assoc-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lab-assoc-panel {
+  padding: 18px;
+}
+
+.lab-assoc-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 900px) {
+  .lab-assoc-grid {
+    grid-template-columns: 0.95fr 1.35fr;
+  }
+}
+
+.lab-assoc-hint-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.lab-assoc-picked {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.lab-assoc-graph {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.25);
+  padding: 10px;
+}
+
+.lab-assoc-edge-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 14px 0 10px;
+}
+
+.lab-assoc-edge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lab-assoc-edge-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lab-assoc-edge-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(148,163,184,0.18);
+  background: rgba(15,23,42,0.22);
+}
+
+.lab-assoc-edge-text {
+  color: var(--text);
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.lab-assoc-edge-sep {
+  color: rgba(125, 211, 252, 0.9);
+  margin: 0 6px;
+}
+
+.lab-assoc-recall {
+  margin-top: 10px;
+}
+
+.lab-assoc-recall-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.lab-assoc-neighbor-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lab-assoc-neighbor-btn {
+  max-width: 220px;
+  justify-content: flex-start;
+  text-align: left;
 }
 
 .lab-header {
