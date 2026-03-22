@@ -29,7 +29,7 @@ export const LabHomePage: React.FC = () => {
 
           <div className="lab-menu-desc-block">
             <p className="lab-menu-desc">
-              选择卡组，挑选部分卡片建立无向图连接，再以连接逐步联想记忆。
+              树形单向边（父→子）：切换起始后上方仅显示下一级子节点；已用卡片不可重复添加。
             </p>
           </div>
         </div>

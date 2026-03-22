@@ -232,8 +232,8 @@ export const StatsPage: React.FC = () => {
           {/* ── 综合概览 ── */}
           <StatSection title="综合概览" icon="📋">
             <div className="stat-kpi-grid">
-              <KpiCard value={kpi.totalDecks} label="个卡组" />
-              <KpiCard value={kpi.totalCards} label="张卡片" />
+              <KpiCard value={kpi.totalDecks} label="卡组数量" />
+              <KpiCard value={kpi.totalCards} label="卡片总数" />
               <KpiCard value={kpi.masteredCards} label="已掌握" color="#22c55e" />
               <KpiCard value={kpi.totalReviews} label="累计学习" />
               <KpiCard
@@ -473,7 +473,7 @@ export const StatsPage: React.FC = () => {
                         fontFamily="system-ui,sans-serif"
                         fontWeight="bold"
                       >
-                        {hovPt.count} 次
+                        学习次数 {hovPt.count}
                       </text>
                     </g>
                   )}
@@ -534,7 +534,7 @@ export const StatsPage: React.FC = () => {
                         </span>
                         {reviewCount > 0 && (
                           <span className="stat-deck-chip stat-deck-chip-acc">
-                            学习 {reviewCount} 次
+                            学习次数 {reviewCount}
                           </span>
                         )}
                       </div>
