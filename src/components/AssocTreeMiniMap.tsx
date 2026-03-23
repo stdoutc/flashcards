@@ -29,7 +29,7 @@ const LABEL_RESERVE = 40;
 
 const MIN_VW = 15;
 
-/** 标签在屏幕上的目标字号（px），不随缩略图缩放变化（与 assocTree 中标签宽度估算联动） */
+/** 标签在屏幕上的目标字号（px），用于布局测宽 */
 const LABEL_FONT_PX = 13.5;
 /** 布局测量与展示都用固定截断长度；拥挤场景通过拉开节点间距解决，不调标签长度 */
 const LAYOUT_LABEL_MAX_CHARS = 10;
@@ -39,12 +39,10 @@ const LAYOUT_LABEL_MAX_CHARS = 10;
 const MINIMAP_REF_CONTENT_WIDTH_PX = 500;
 /** 实测宽度后略放大，避免 SVG 与 Canvas 字距差异导致仍重叠 */
 const LABEL_MEASURE_SAFETY = 1.18;
-/** 圆底边到文字顶边的屏幕间隙（px） */
-const LABEL_GAP_PX = 4;
-/** 尚无视口宽度时的回退：用户单位字号 */
-const LABEL_FONT_U_FALLBACK = 3.1;
-const LABEL_GAP_U_FALLBACK = 0.65;
-const LABEL_LANE_GAP_PX = 2.5;
+/** 显示字号/间距采用逻辑坐标单位：缩放时文字会随图等比放大缩小 */
+const LABEL_FONT_U = 2.8;
+const LABEL_GAP_U = 0.75;
+const LABEL_LANE_GAP_U = 0.45;
 
 function clamp(n: number, a: number, b: number): number {
   return Math.min(b, Math.max(a, n));
@@ -95,7 +93,6 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
   className,
   caption,
 }) => {
-  /** 视口 CSS 宽度，用于把标签字号固定为屏幕像素 */
   const [viewportPxW, setViewportPxW] = useState(0);
 
   const treeNodeIds = useMemo(() => preorderSubtree(rootId, children), [rootId, children]);
@@ -152,6 +149,25 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
   const applyZoomAtRef = useRef<(sx: number, sy: number, factor: number) => void>(() => {});
 
   const resetView = useCallback(() => setVb({ vx: 0, vy: 0, vw: mapW }), [mapW]);
+
+  const centerNodeInView = useCallback(
+    (id: string) => {
+      const pos = layout.get(id);
+      if (!pos) return;
+      const p = toSvgCoords(pos.x / contentMaxXNorm, pos.depth, maxDepth);
+      const cx = p.cx * contentMaxXNorm;
+      const cy = p.cy;
+      setVb((prev) => {
+        const vh = vhFromVw(prev.vw);
+        return {
+          vx: clamp(cx - prev.vw / 2, 0, mapW - prev.vw),
+          vy: clamp(cy - vh / 2, 0, MAP_H - vh),
+          vw: prev.vw,
+        };
+      });
+    },
+    [layout, contentMaxXNorm, maxDepth, mapW],
+  );
 
   const applyZoomAt = useCallback((sx: number, sy: number, factor: number) => {
     setVb((prev) => {
@@ -254,11 +270,6 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
   const vbVh = vhFromVw(vb.vw);
 
   const vpW = Math.max(viewportPxW, 1);
-  const labelFontUser =
-    viewportPxW > 0 ? (LABEL_FONT_PX * vb.vw) / vpW : LABEL_FONT_U_FALLBACK;
-  const labelGapUser =
-    viewportPxW > 0 ? (LABEL_GAP_PX * vb.vw) / vpW : LABEL_GAP_U_FALLBACK;
-  const labelLaneGapUser = viewportPxW > 0 ? (LABEL_LANE_GAP_PX * vb.vw) / vpW : 0.4;
 
   const labelTextById = useMemo(() => {
     const m = new Map<string, string>();
@@ -271,7 +282,7 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
   /** 按同层碰撞检测为标签分配 lane（0,1,2...），不改字号，仅通过多行错位提升可读性 */
   const labelLaneById = useMemo(() => {
     const byDepth = new Map<number, Array<{ id: string; cx: number; w: number }>>();
-    const minGapUser = labelFontUser * 0.35;
+    const minGapUser = LABEL_FONT_U * 0.35;
     for (const [id, pos] of layout.entries()) {
       const p = toSvgCoords(pos.x / contentMaxXNorm, pos.depth, maxDepth);
       const cx = p.cx * contentMaxXNorm;
@@ -297,7 +308,7 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
       }
     }
     return out;
-  }, [layout, contentMaxXNorm, maxDepth, labelTextById, vb.vw, vpW, labelFontUser]);
+  }, [layout, contentMaxXNorm, maxDepth, labelTextById, vb.vw, vpW]);
 
   return (
     <div className={`assoc-minimap ${className ?? ''}`.trim()}>
@@ -391,9 +402,9 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
             const labelY =
               cy +
               r +
-              labelGapUser +
-              labelFontUser / 2 +
-              lane * (labelFontUser + labelLaneGapUser);
+              LABEL_GAP_U +
+              LABEL_FONT_U / 2 +
+              lane * (LABEL_FONT_U + LABEL_LANE_GAP_U);
             return (
               <g
                 key={id}
@@ -411,13 +422,21 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
                   className="assoc-minimap-node-circle"
                   role={clickable ? 'button' : undefined}
                   tabIndex={clickable ? 0 : undefined}
-                  onClick={clickable ? () => onNodeClick?.(id) : undefined}
+                  onClick={
+                    clickable
+                      ? () => {
+                          centerNodeInView(id);
+                          onNodeClick?.(id);
+                        }
+                      : undefined
+                  }
                   onPointerDown={(e) => e.stopPropagation()}
                   onKeyDown={
                     clickable
                       ? (e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
+                            centerNodeInView(id);
                             onNodeClick?.(id);
                           }
                         }
@@ -429,7 +448,7 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
                   y={labelY}
                   textAnchor="middle"
                   dominantBaseline="middle"
-                  fontSize={labelFontUser}
+                  fontSize={LABEL_FONT_U}
                   stroke="rgba(2,6,23,0.9)"
                   strokeWidth={0.9}
                   paintOrder="stroke"
@@ -444,8 +463,8 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
       </div>
       <p className="assoc-minimap-hint hint">
         {onNodeClick
-          ? '滚轮缩放 · 空白处拖拽平移 · 双击空白重置 · 点击节点定位 · 标签自动错行避让'
-          : '滚轮缩放 · 空白处拖拽平移 · 双击空白重置 · 标签自动错行避让'}
+          ? '滚轮缩放 · 空白处拖拽平移 · 双击空白重置 · 点击节点居中（不缩放）'
+          : '滚轮缩放 · 空白处拖拽平移 · 双击空白重置'}
       </p>
     </div>
   );

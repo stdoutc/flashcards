@@ -212,7 +212,7 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
             关闭
           </button>
         ) : (
-          <Link to="/lab/assoc" className="button button-primary">
+          <Link to="/assoc" className="button button-primary">
             返回知识联想图谱
           </Link>
         )}
@@ -276,7 +276,7 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
               <button type="button" className="button button-ghost button-sm" onClick={() => window.close()}>
                 关闭标签页
               </button>
-              <Link to="/lab/assoc" className="button button-ghost button-sm">
+              <Link to="/assoc" className="button button-ghost button-sm">
                 返回图谱
               </Link>
             </>

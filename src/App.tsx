@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Link, NavLink, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { FlashcardProvider } from './context/FlashcardContext';
 import { HomePage } from './pages/HomePage';
 import { CardEditPage } from './pages/CardEditPage';
@@ -10,6 +10,7 @@ import { LabPage } from './pages/LabPage';
 import { LabHomePage } from './pages/LabHomePage';
 import { LabAssocPage } from './pages/LabAssocPage';
 import { LabAssocRecallPage } from './pages/LabAssocRecallPage';
+import { AssocHomePage } from './pages/AssocHomePage';
 import { IS_DEBUG } from './features/decks/useFlashcardApp';
 import { DebugPanel } from './debug/DebugPanel';
 
@@ -17,8 +18,12 @@ import { DebugPanel } from './debug/DebugPanel';
 const AppMain: React.FC = () => {
   const { pathname } = useLocation();
   const assocRecallFull =
-    pathname === '/lab/assoc/recall' || pathname.endsWith('/lab/assoc/recall');
+    pathname === '/assoc/recall' ||
+    pathname.endsWith('/assoc/recall') ||
+    pathname === '/lab/assoc/recall' ||
+    pathname.endsWith('/lab/assoc/recall');
   const labAssocGraphPage =
+    (/^\/assoc\/[^/]+$/.test(pathname) && !pathname.endsWith('/recall')) ||
     pathname === '/lab/assoc' ||
     (pathname.endsWith('/lab/assoc') && !pathname.endsWith('/lab/assoc/recall'));
   return (
@@ -32,8 +37,11 @@ const AppMain: React.FC = () => {
         <Route path="/stats" element={<StatsPage />} />
         <Route path="/lab" element={<LabHomePage />} />
         <Route path="/lab/ai" element={<LabPage />} />
-        <Route path="/lab/assoc" element={<LabAssocPage />} />
-        <Route path="/lab/assoc/recall" element={<LabAssocRecallPage />} />
+        <Route path="/assoc" element={<AssocHomePage />} />
+        <Route path="/assoc/:projectId" element={<LabAssocPage />} />
+        <Route path="/assoc/recall" element={<LabAssocRecallPage />} />
+        <Route path="/lab/assoc" element={<Navigate to="/assoc" replace />} />
+        <Route path="/lab/assoc/recall" element={<Navigate to="/assoc/recall" replace />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </main>
@@ -68,6 +76,14 @@ export const App: React.FC = () => {
                 }
               >
                 统计
+              </NavLink>
+              <NavLink
+                to="/assoc"
+                className={({ isActive }) =>
+                  `app-nav-link ${isActive ? 'active' : ''}`
+                }
+              >
+                联想
               </NavLink>
               <NavLink
                 to="/lab"

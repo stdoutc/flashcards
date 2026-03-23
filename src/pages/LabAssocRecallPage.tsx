@@ -52,7 +52,7 @@ export const LabAssocRecallPage: React.FC = () => {
       <div className="lab-assoc-recall-page lab-assoc-recall-page--fullscreen">
         <div className="lab-assoc-recall-inner lab-assoc-recall-error card-surface">
           <p>{loadError}</p>
-          <Link to="/lab/assoc" className="button button-primary">
+          <Link to="/assoc" className="button button-primary">
             返回知识联想图谱
           </Link>
         </div>
@@ -84,6 +84,6 @@ export function openAssocRecallWindow(
     return null;
   }
   const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') || '';
-  const path = `${base}/lab/assoc/recall?k=${encodeURIComponent(k)}`;
+  const path = `${base}/assoc/recall?k=${encodeURIComponent(k)}`;
   return window.open(path, '_blank', 'noopener,noreferrer');
 }

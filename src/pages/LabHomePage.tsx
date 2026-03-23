@@ -14,7 +14,7 @@ export const LabHomePage: React.FC = () => {
 
         <div className="lab-menu-items">
           <Link to="/lab/ai" className="button button-primary lab-menu-item">
-            ① AI 图片识别制卡
+            AI 图片识别制卡
           </Link>
 
           <div className="lab-menu-desc-block">
@@ -23,15 +23,6 @@ export const LabHomePage: React.FC = () => {
             </p>
           </div>
 
-          <Link to="/lab/assoc" className="button button-primary lab-menu-item lab-menu-item-2">
-            ② 知识联想图谱（卡片关联记忆）
-          </Link>
-
-          <div className="lab-menu-desc-block">
-            <p className="lab-menu-desc">
-              首张加入为树根；树形单向边（父→子）；联想窗口从树根先序遍历。已用卡片不可重复添加。
-            </p>
-          </div>
         </div>
       </section>
     </div>

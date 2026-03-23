@@ -1,10 +1,15 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { CardRenderer } from '../components/CardRenderer';
 import { useFlashcard } from '../context/FlashcardContext';
 import type { Card } from '../domain/models';
 import { AssocTreeMiniMap } from '../components/AssocTreeMiniMap';
 import { openAssocRecallWindow } from './LabAssocRecallPage';
+import {
+  getAssocProject,
+  saveAssocProjectGraph,
+  updateAssocProjectMeta,
+} from '../domain/assocProjectStorage';
 
 /** 无向边（旧版） */
 type AssocEdge = { a: string; b: string };
@@ -35,7 +40,6 @@ type AssocStateLegacy = {
   edges: AssocEdge[];
 };
 
-const STORAGE_PREFIX = 'flashcard-assoc-';
 /** 每个节点最多子节点数（单向出边） */
 const MAX_CHILDREN = 6;
 /** 桌面双栏：左栏合理高度下限（与 CSS min-height 一致）。右栏低于此高度时不做左右等高对齐，避免矮视窗下列表被压得过扁。 */
@@ -153,6 +157,8 @@ function nodesFromUndirectedEdges(rootId: string | null, edges: AssocEdge[]): Se
 
 export const LabAssocPage: React.FC = () => {
   const { state } = useFlashcard();
+  const navigate = useNavigate();
+  const { projectId } = useParams<{ projectId: string }>();
 
   const [deckId, setDeckId] = useState<string>(state.decks[0]?.id ?? '');
   const [rootId, setRootId] = useState<string | null>(null);
@@ -163,6 +169,10 @@ export const LabAssocPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
   const [replaceTargetId, setReplaceTargetId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState('');
+  const [projectLoaded, setProjectLoaded] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const lastSavedSnapshotRef = useRef('');
 
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const rightPanelRef = useRef<HTMLElement | null>(null);
@@ -178,9 +188,6 @@ export const LabAssocPage: React.FC = () => {
   );
 
   const cardById = useMemo(() => new Map(cardsOfDeck.map((c) => [c.id, c])), [cardsOfDeck]);
-
-  const storageKey = useMemo(() => `${STORAGE_PREFIX}${deckId}`, [deckId]);
-  const loadedStorageKeyRef = useRef<string | null>(null);
 
   /** 当前起始节点的直接子节点（仅下一级，用于上方展示） */
   const topIds = useMemo(() => (focusId ? childrenMap[focusId] ?? [] : []), [childrenMap, focusId]);
@@ -221,6 +228,11 @@ export const LabAssocPage: React.FC = () => {
     setFeedback(msg);
     window.setTimeout(() => setFeedback(null), 3800);
   }, []);
+
+  const graphSnapshot = useMemo(
+    () => JSON.stringify({ rootId, focusId, children: childrenMap }),
+    [rootId, focusId, childrenMap],
+  );
 
   /** 子节点数 */
   const childCount = useCallback(
@@ -304,12 +316,7 @@ export const LabAssocPage: React.FC = () => {
     setFocusId(null);
     setChildrenMap({});
     setSearchQuery('');
-    try {
-      localStorage.removeItem(storageKey);
-    } catch {
-      // ignore
-    }
-    showFeedback('已清空本卡组的联想图');
+    showFeedback('已清空当前联想图谱');
   };
 
   const measureWires = useCallback(() => {
@@ -385,119 +392,41 @@ export const LabAssocPage: React.FC = () => {
   }, [measureWires]);
 
   useEffect(() => {
-    loadedStorageKeyRef.current = null;
-  }, [storageKey]);
+    setProjectLoaded(false);
+    if (!projectId) {
+      navigate('/assoc', { replace: true });
+      return;
+    }
+    const p = getAssocProject(projectId);
+    if (!p) {
+      navigate('/assoc', { replace: true });
+      return;
+    }
+    setProjectName(p.name);
+    const nextDeckId = state.decks.some((d) => d.id === p.deckId)
+      ? p.deckId
+      : state.decks[0]?.id ?? '';
+    setDeckId(nextDeckId);
+    if (nextDeckId !== p.deckId) {
+      updateAssocProjectMeta(projectId, { deckId: nextDeckId });
+    }
+    setRootId(p.graph.rootId);
+    setFocusId(p.graph.focusId);
+    setChildrenMap(p.graph.children ?? {});
+    lastSavedSnapshotRef.current = JSON.stringify({
+      rootId: p.graph.rootId,
+      focusId: p.graph.focusId,
+      children: p.graph.children ?? {},
+    });
+    setHasUnsavedChanges(false);
+    setProjectLoaded(true);
+  }, [projectId, state.decks, navigate]);
 
   useEffect(() => {
     if (replaceTargetId && !treeNodes.has(replaceTargetId)) {
       setReplaceTargetId(null);
     }
   }, [replaceTargetId, treeNodes]);
-
-  useEffect(() => {
-    if (!deckId || cardsOfDeck.length === 0) return;
-    if (loadedStorageKeyRef.current === storageKey) return;
-    loadedStorageKeyRef.current = storageKey;
-
-    const byId = new Map(cardsOfDeck.map((c) => [c.id, c]));
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (!raw) {
-        setRootId(null);
-        setFocusId(null);
-        setChildrenMap({});
-        return;
-      }
-      const parsed = JSON.parse(raw) as
-        | AssocStateV4
-        | AssocStateV3
-        | AssocStateV2
-        | AssocStateLegacy
-        | Record<string, unknown>;
-
-      if (parsed && typeof parsed === 'object' && 'v' in parsed && (parsed as AssocStateV4).v === 4) {
-        const p = parsed as AssocStateV4;
-        if (p.rootId && byId.has(p.rootId) && p.focusId && byId.has(p.focusId)) {
-          const ch: Record<string, string[]> = {};
-          for (const [pid, arr] of Object.entries(p.children ?? {})) {
-            if (!byId.has(pid)) continue;
-            const ok = (arr ?? []).filter((cid) => byId.has(cid));
-            if (ok.length) ch[pid] = ok;
-          }
-          setRootId(p.rootId);
-          setFocusId(p.focusId);
-          setChildrenMap(ch);
-        } else {
-          setRootId(null);
-          setFocusId(null);
-          setChildrenMap({});
-        }
-        return;
-      }
-
-      if (parsed && typeof parsed === 'object' && 'v' in parsed && (parsed as AssocStateV3).v === 3) {
-        const p = parsed as AssocStateV3;
-        const edges = (p.edges ?? []).filter((e) => byId.has(e.a) && byId.has(e.b));
-        const nodes = nodesFromUndirectedEdges(p.focusId, edges);
-        for (const id of p.topIds ?? []) {
-          if (byId.has(id)) nodes.add(id);
-        }
-        const root = p.focusId && byId.has(p.focusId) ? p.focusId : [...nodes][0];
-        if (root && nodes.size) {
-          const ch = spanningTreeFromUndirected(root, nodes, edges);
-          setRootId(root);
-          setFocusId(p.focusId && byId.has(p.focusId) ? p.focusId : root);
-          setChildrenMap(ch);
-        } else {
-          setRootId(null);
-          setFocusId(null);
-          setChildrenMap({});
-        }
-        return;
-      }
-
-      if (parsed && typeof parsed === 'object' && 'v' in parsed && (parsed as AssocStateV2).v === 2) {
-        const p = parsed as AssocStateV2;
-        const edges = (p.edges ?? []).filter((e) => byId.has(e.a) && byId.has(e.b));
-        const nodes = nodesFromUndirectedEdges(p.rootId, edges);
-        const root = p.rootId && byId.has(p.rootId) ? p.rootId : [...nodes][0];
-        if (root && nodes.size) {
-          setRootId(root);
-          setFocusId(root);
-          setChildrenMap(spanningTreeFromUndirected(root, nodes, edges));
-        } else {
-          setRootId(null);
-          setFocusId(null);
-          setChildrenMap({});
-        }
-        return;
-      }
-
-      const legacy = parsed as AssocStateLegacy;
-      if (legacy?.nodeIds?.length && Array.isArray(legacy.edges)) {
-        const valid = legacy.nodeIds.filter((id) => byId.has(id));
-        const edges = legacy.edges.filter((e) => byId.has(e.a) && byId.has(e.b));
-        const nodes = new Set(valid);
-        for (const e of edges) {
-          nodes.add(e.a);
-          nodes.add(e.b);
-        }
-        const root = valid[0];
-        if (root && nodes.size) {
-          setRootId(root);
-          setFocusId(root);
-          setChildrenMap(spanningTreeFromUndirected(root, nodes, edges));
-        } else {
-          setRootId(null);
-          setFocusId(null);
-          setChildrenMap({});
-        }
-        return;
-      }
-    } catch {
-      // ignore
-    }
-  }, [storageKey, deckId, cardsOfDeck]);
 
   useEffect(() => {
     if (rootId && !cardById.has(rootId)) {
@@ -520,19 +449,31 @@ export const LabAssocPage: React.FC = () => {
   }, [cardById, focusId, rootId]);
 
   useEffect(() => {
-    if (!deckId || !rootId || !focusId) return;
-    const payload: AssocStateV4 = {
-      v: 4,
+    if (!projectLoaded) return;
+    setHasUnsavedChanges(graphSnapshot !== lastSavedSnapshotRef.current);
+  }, [projectLoaded, graphSnapshot]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  const saveCurrentGraph = useCallback(() => {
+    if (!projectId || !projectLoaded) return;
+    saveAssocProjectGraph(projectId, {
       rootId,
       focusId,
       children: childrenMap,
-    };
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(payload));
-    } catch {
-      // ignore
-    }
-  }, [deckId, childrenMap, focusId, rootId, storageKey]);
+    });
+    lastSavedSnapshotRef.current = graphSnapshot;
+    setHasUnsavedChanges(false);
+    showFeedback('已保存图谱');
+  }, [projectId, projectLoaded, rootId, focusId, childrenMap, graphSnapshot, showFeedback]);
 
   const openRecallInNewTab = useCallback(() => {
     if (!rootId) return;
@@ -560,6 +501,9 @@ export const LabAssocPage: React.FC = () => {
       <div className="lab-header">
         <h2 className="lab-title">🧠 知识联想图谱</h2>
         <p className="lab-subtitle">
+          当前图谱：<strong>{projectName || '未命名联想图谱'}</strong>。{' '}
+          <Link to="/assoc">返回联想首页</Link>。
+          <br />
           数据结构为<strong>树</strong>（单向：父→子）。<strong>首张加入的卡片</strong>为树根；之后新卡片作为当前起始的子节点连边。切换起始后，上方仅显示下一级子节点。每节点最多 {MAX_CHILDREN} 个子节点。
         </p>
       </div>
@@ -587,24 +531,11 @@ export const LabAssocPage: React.FC = () => {
           <h3 className="lab-section-title">搜索并选择卡片</h3>
 
           <label className="label" style={{ marginTop: 8 }}>
-            卡组
+            卡组（创建图谱时已绑定）
           </label>
-          <select
-            className="input"
-            value={deckId}
-            onChange={(e) => {
-              setDeckId(e.target.value);
-              setRootId(null);
-              setFocusId(null);
-              setChildrenMap({});
-            }}
-          >
-            {state.decks.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+          <div className="input" aria-readonly="true">
+            {state.decks.find((d) => d.id === deckId)?.name ?? '未绑定卡组'}
+          </div>
 
           <div className="lab-assoc-search-block">
             <label className="label">搜索</label>
@@ -920,8 +851,8 @@ export const LabAssocPage: React.FC = () => {
 
       {!showAssocBottomToolbar && (
         <div style={{ marginTop: 18, textAlign: 'center' }}>
-          <Link to="/lab" className="button button-ghost">
-            返回实验室
+          <Link to="/assoc" className="button button-ghost">
+            返回联想首页
           </Link>
         </div>
       )}
@@ -941,13 +872,28 @@ export const LabAssocPage: React.FC = () => {
             <div className="lab-assoc-bottom-toolbar-actions">
               <button
                 type="button"
-                className="button button-primary lab-assoc-bottom-toolbar-btn"
+                className="button button-primary button-sm lab-assoc-bottom-toolbar-btn"
+                onClick={saveCurrentGraph}
+                disabled={!projectLoaded || !hasUnsavedChanges}
+              >
+                保存图谱
+              </button>
+              <button
+                type="button"
+                className="button button-primary button-sm lab-assoc-bottom-toolbar-btn"
                 onClick={openRecallInNewTab}
               >
                 在新标签页打开联想
               </button>
-              <Link to="/lab" className="button button-ghost button-sm lab-assoc-bottom-toolbar-link">
-                返回实验室
+              {hasUnsavedChanges ? (
+                <span className="hint small" style={{ color: 'var(--warn, #f59e0b)' }}>
+                  有未保存更改
+                </span>
+              ) : (
+                <span className="hint small">已保存</span>
+              )}
+              <Link to="/assoc" className="button button-ghost button-sm lab-assoc-bottom-toolbar-link">
+                返回联想首页
               </Link>
             </div>
           </div>

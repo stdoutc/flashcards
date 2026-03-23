@@ -1040,6 +1040,7 @@ a.button { text-decoration: none; }
   gap: 16px;
 }
 
+
 /* 顶部栏：标题 + 搜索 + 按钮 */
 .home-header {
   display: flex;
@@ -2533,7 +2534,7 @@ a.button { text-decoration: none; }
   vertical-align: middle;
 }
 
-/* SVG 文字标签：fontSize 由组件按视口换算为固定屏幕像素，不随缩略图缩放变大变小 */
+/* SVG 文字标签：使用逻辑坐标字号，随缩放等比变化，位置与节点保持相对不变 */
 .assoc-minimap-node-label {
   pointer-events: none;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;

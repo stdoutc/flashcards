@@ -223,7 +223,6 @@ export const HomePage: React.FC = () => {
 
   return (
     <div className="home-page">
-
       {/* ── 顶部栏 ── */}
       <div className="home-header">
         <div className="home-header-left">
