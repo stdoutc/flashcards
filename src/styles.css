@@ -2063,12 +2063,12 @@ a.button { text-decoration: none; }
   padding: 0 0 40px;
 }
 
-/** 知识联想图谱页：主区占满视口高度，便于左侧列表拉满 */
+/** 知识联想图谱页：主区随内容高度（右侧不强行拉高） */
 .lab-page--assoc-graph {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  flex: 1;
+  flex: 0 1 auto;
 }
 
 /** 底部有联想工具栏时，为内容留出空隙避免被遮挡 */
@@ -2533,7 +2533,7 @@ a.button { text-decoration: none; }
   vertical-align: middle;
 }
 
-/* SVG 文字标签：与节点同一坐标系，缩放/平移时与圆保持相对位置不变 */
+/* SVG 文字标签：fontSize 由组件按视口换算为固定屏幕像素，不随缩略图缩放变大变小 */
 .assoc-minimap-node-label {
   pointer-events: none;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -2776,13 +2776,53 @@ a.button { text-decoration: none; }
 }
 
 .lab-page--assoc-graph .lab-assoc-grid-wireframe {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
 }
 
 @media (min-width: 900px) {
-  .lab-assoc-grid-wireframe {
-    grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.5fr);
+  /**
+   * 用 Flex 横排：行高 = max(左内容, 右内容)；左侧 stretch 与行同高，右侧 flex-start 仅内容高。
+   * （Grid 下右列 align-self:start 时，左列常无法可靠拉满同高。）
+   */
+  .lab-assoc-grid.lab-assoc-grid-wireframe {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .lab-assoc-grid-wireframe > .lab-assoc-panel-left {
+    flex: 0 1 min(42%, 400px);
+    min-width: 280px;
+    max-width: 440px;
+    /* 约：顶区 + 列表区可舒适显示 3～4 张结果卡；与 LabAssocPage ASSOC_LEFT_PANEL_MIN_HEIGHT_PX 一致 */
+    min-height: 520px;
+    display: flex;
+    flex-direction: column;
+    /* 与右栏同为 flex-start；左栏高度由 JS 按右栏 offset 同步，避免行高被左侧内容撑高 */
+    align-self: flex-start;
+  }
+
+  /* 列表滚动区下限：保证至少约 3～4 张卡条目的可视高度（与左栏 min-height 配套） */
+  .lab-assoc-grid-wireframe > .lab-assoc-panel-left .lab-assoc-results.lab-assoc-results-left {
+    min-height: 300px;
+  }
+
+  /* 右侧联想图区固定宽度，不随视窗拉宽 */
+  .lab-assoc-grid-wireframe > .lab-assoc-panel-graph {
+    flex: 0 0 560px;
+    width: 560px;
+    max-width: 560px;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-self: flex-start;
+  }
+
+  .lab-assoc-panel-graph-wireframe {
+    overflow: visible;
   }
 }
 
@@ -2800,6 +2840,11 @@ a.button { text-decoration: none; }
   max-height: none;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+.lab-assoc-panel-left .lab-assoc-actions {
+  margin-top: 12px;
+  flex-shrink: 0;
 }
 
 @media (max-width: 899px) {

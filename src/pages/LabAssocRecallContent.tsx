@@ -1,8 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AssocTreeMiniMap } from '../components/AssocTreeMiniMap';
 import { CardRenderer } from '../components/CardRenderer';
 import { findPathFromRoot } from '../domain/assocTree';
+import {
+  clearAssocRecallReviewed,
+  fingerprintAssocTree,
+  loadAssocRecallReviewed,
+  saveAssocRecallReviewed,
+} from '../domain/assocRecallReviewStorage';
 import { useFlashcard } from '../context/FlashcardContext';
 import type { AssocRecallPayloadV2 } from '../domain/assocRecallPayload';
 
@@ -43,6 +49,7 @@ export type AssocRecallContentProps = {
 
 /**
  * 联想模式主界面（可被路由页或底部浮动层复用）
+ * 已复习：仅当起始卡翻面到反面时记入；进度持久化至 localStorage，完成复习后清除。
  */
 export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
   payload,
@@ -54,13 +61,36 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
 
   const [trail, setTrail] = useState<string[]>([rootId]);
   const [phase, setPhase] = useState<Phase>('showFront');
-  const [visitedStarts, setVisitedStarts] = useState<Set<string>>(() => new Set([rootId]));
+  const [reviewedIds, setReviewedIds] = useState<Set<string>>(() => new Set());
+  /** 避免首次挂载时用空 Set 覆盖 localStorage（须在加载 effect 之后保存） */
+  const skipSaveAfterHydrateRef = useRef(true);
 
+  const treeFingerprint = useMemo(() => fingerprintAssocTree(rootId, children), [rootId, children]);
+
+  const allIdsInTree = useMemo(
+    () => (rootId ? collectAllIds(rootId, children) : new Set<string>()),
+    [rootId, children],
+  );
+
+  /** 树或卡组变化：恢复进度并重置当前路径 */
   useEffect(() => {
+    if (!rootId) return;
+    const valid = collectAllIds(rootId, children);
+    setReviewedIds(loadAssocRecallReviewed(deckId, rootId, children, valid));
     setTrail([rootId]);
     setPhase('showFront');
-    setVisitedStarts(new Set([rootId]));
-  }, [rootId, deckId, children]);
+    skipSaveAfterHydrateRef.current = true;
+  }, [deckId, rootId, treeFingerprint, children]);
+
+  /** 持久化已复习集合 */
+  useEffect(() => {
+    if (!rootId) return;
+    if (skipSaveAfterHydrateRef.current) {
+      skipSaveAfterHydrateRef.current = false;
+      return;
+    }
+    saveAssocRecallReviewed(deckId, rootId, children, reviewedIds);
+  }, [deckId, rootId, children, reviewedIds]);
 
   const cardById = useMemo(() => {
     return new Map(state.cards.filter((c) => c.deckId === deckId).map((c) => [c.id, c]));
@@ -68,11 +98,6 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
 
   const treeSize = useMemo(
     () => (rootId ? countTreeNodes(rootId, children) : 0),
-    [rootId, children],
-  );
-
-  const allIdsInTree = useMemo(
-    () => (rootId ? collectAllIds(rootId, children) : new Set<string>()),
     [rootId, children],
   );
 
@@ -84,8 +109,8 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
     return children[focusId] ?? [];
   }, [focusId, children]);
 
-  const visitedCount = visitedStarts.size;
-  const allVisited = treeSize > 0 && visitedCount >= allIdsInTree.size;
+  const reviewedCount = reviewedIds.size;
+  const allVisited = treeSize > 0 && reviewedCount >= allIdsInTree.size;
 
   const pickGridStyle = useMemo((): React.CSSProperties => {
     const n = childIds.length;
@@ -110,6 +135,8 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
   const handleMainCardClick = useCallback(() => {
     if (!focusId || !focusCard) return;
     if (phase === 'showFront') {
+      /** 翻面到反面时标记当前起始节点为已复习 */
+      setReviewedIds((prev) => new Set(prev).add(focusId));
       setPhase('showBack');
       return;
     }
@@ -122,7 +149,6 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
   const pickChildAsNewStart = useCallback((childId: string) => {
     setTrail((t) => [...t, childId]);
     setPhase('showFront');
-    setVisitedStarts((prev) => new Set(prev).add(childId));
   }, []);
 
   const goBackLevel = useCallback(() => {
@@ -139,10 +165,15 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
       if (!path?.length) return;
       setTrail(path);
       setPhase('showFront');
-      setVisitedStarts((prev) => new Set(prev).add(id));
     },
     [rootId, children],
   );
+
+  const handleFinishReview = useCallback(() => {
+    if (!window.confirm('确定完成复习并清空本卡组联想模式的复习进度？')) return;
+    setReviewedIds(new Set());
+    clearAssocRecallReviewed(deckId);
+  }, [deckId]);
 
   const handleKeyDownMain = useCallback(
     (e: React.KeyboardEvent) => {
@@ -204,7 +235,7 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
       children={children}
       focusId={focusId}
       trailIds={trail}
-      markedIds={visitedStarts}
+      markedIds={reviewedIds}
       getLabel={(id) => truncateLabel(cardById.get(id)?.front ?? cardById.get(id)?.back ?? id, 10)}
       getTitle={(id) => {
         const c = cardById.get(id);
@@ -223,9 +254,14 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
       <header className="lab-assoc-recall-toolbar card-surface">
         <span className="lab-assoc-recall-title">联想模式</span>
         <span className="lab-assoc-recall-progress">
-          树共 {treeSize} 张 · 已作起始 {visitedCount}/{allIdsInTree.size} · 深度 {trail.length}
+          树共 {treeSize} 张 · 已复习 {reviewedCount}/{allIdsInTree.size} · 深度 {trail.length}
         </span>
         <div className="lab-assoc-recall-toolbar-actions">
+          {reviewedCount > 0 && (
+            <button type="button" className="button button-ghost button-sm" onClick={handleFinishReview}>
+              完成复习
+            </button>
+          )}
           {trail.length > 1 && (
             <button type="button" className="button button-ghost button-sm" onClick={goBackLevel}>
               返回上一层
@@ -249,18 +285,17 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
       </header>
 
       <p className="lab-assoc-recall-hint hint">
-        先看<strong>起始卡正面</strong> → 点击看<strong>反面</strong> → 再点击<strong>隐藏起始卡</strong>并同屏显示<strong>所有子卡正面</strong> →
-        点击某一子卡将其设为<strong>新起始</strong>并放大；重复直至走遍各分支。
+        先看<strong>起始卡正面</strong> → 点击翻面看<strong>反面</strong>（此时记为已复习）→ 再点击隐藏起始卡并显示<strong>子卡正面</strong> →
+        点击某一子卡作为<strong>新起始</strong>；重复直至走遍各分支。
         <span className="lab-assoc-recall-hint-note">
           {' '}
-          带「已复习」标记的子卡表示本会话内曾进入过。
-          {variant === 'page' ? ' 关闭标签页后不保留。' : ''}
+          带「已复习」标记表示该节点已至少翻面到反面一次。复习进度保存在本机，关闭标签页后仍保留；点击「完成复习」可清空进度。
         </span>
       </p>
 
       {allVisited && (
         <p className="lab-assoc-recall-context hint" style={{ color: 'var(--ok, #4ade80)' }}>
-          已从各节点进入过起始流程，遍历完成。仍可返回上一层复习其他路径。
+          已从各节点翻面到反面，复习进度已全覆盖。仍可返回上一层或点击「完成复习」清空进度。
         </p>
       )}
 
@@ -310,7 +345,7 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
                 </div>
               </div>
               <p className="lab-assoc-recall-start-hint hint">
-                {!flipped ? '点击翻面' : '再点击隐藏起始卡，显示子卡片（同屏）'}
+                {!flipped ? '点击翻面（翻面后将记为已复习）' : '再点击隐藏起始卡，显示子卡片（同屏）'}
               </p>
             </div>
           )}
@@ -337,7 +372,7 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
                   {childIds.map((id) => {
                     const c = cardById.get(id);
                     if (!c) return null;
-                    const reviewed = visitedStarts.has(id);
+                    const reviewed = reviewedIds.has(id);
                     return (
                       <button
                         key={id}

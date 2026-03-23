@@ -12,6 +12,7 @@
     "lint": "eslint src --ext ts,tsx"
   },
   "dependencies": {
+    "d3-flextree": "^2.1.2",
     "katex": "^0.16.33",
     "marked": "^17.0.4",
     "react": "^18.3.1",

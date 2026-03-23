@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { layoutAssocTreeMiniMap } from '../domain/assocTree';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { layoutAssocTreeMiniMap, preorderSubtree } from '../domain/assocTree';
+import { measureAssocMinimapLabelPx } from '../utils/minimapLabelMeasure';
 
 export type AssocTreeMiniMapProps = {
   rootId: string;
@@ -23,16 +24,27 @@ export type AssocTreeMiniMapProps = {
 const MAP_W = 100;
 const MAP_H = 128;
 const PAD = { x: 7, y: 9 };
-/** 节点列底部留白（用户单位），专供节点下方 SVG 文字 */
-const LABEL_RESERVE = 14;
+/** 底部留白（用户单位），为同层标签自动避让（多行）预留空间 */
+const LABEL_RESERVE = 40;
 
 const MIN_VW = 15;
-const MAX_VW = MAP_W;
 
-/** 标签字号（用户单位），随 viewBox 缩放，与节点相对几何关系不变 */
-const LABEL_FONT_U = 2.65;
-/** 圆底边到文字顶边的间隙（用户单位） */
-const LABEL_GAP_U = 0.55;
+/** 标签在屏幕上的目标字号（px），不随缩略图缩放变化（与 assocTree 中标签宽度估算联动） */
+const LABEL_FONT_PX = 13.5;
+/** 布局测量与展示都用固定截断长度；拥挤场景通过拉开节点间距解决，不调标签长度 */
+const LAYOUT_LABEL_MAX_CHARS = 10;
+/**
+ * 将标签像素半宽换算为归一化横坐标时的参考视口宽度（与常见右栏固定宽度下缩略图可视区同量级）。
+ */
+const MINIMAP_REF_CONTENT_WIDTH_PX = 500;
+/** 实测宽度后略放大，避免 SVG 与 Canvas 字距差异导致仍重叠 */
+const LABEL_MEASURE_SAFETY = 1.18;
+/** 圆底边到文字顶边的屏幕间隙（px） */
+const LABEL_GAP_PX = 4;
+/** 尚无视口宽度时的回退：用户单位字号 */
+const LABEL_FONT_U_FALLBACK = 3.1;
+const LABEL_GAP_U_FALLBACK = 0.65;
+const LABEL_LANE_GAP_PX = 2.5;
 
 function clamp(n: number, a: number, b: number): number {
   return Math.min(b, Math.max(a, n));
@@ -68,7 +80,8 @@ function shortLabelText(raw: string, maxLen: number): string {
 }
 
 /**
- * 整棵树关系缩略图：有向边 + 节点 + SVG 文字标签（与节点同一坐标系，缩放/平移不改变相对位置）。
+ * 整棵树关系缩略图：有向边 + 节点 + SVG 文字标签。
+ * 缩放/平移时节点与边随 viewBox 变化；文字保持屏幕绝对字号（位置仍跟节点走）。
  */
 export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
   rootId,
@@ -82,8 +95,29 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
   className,
   caption,
 }) => {
+  /** 视口 CSS 宽度，用于把标签字号固定为屏幕像素 */
+  const [viewportPxW, setViewportPxW] = useState(0);
+
+  const treeNodeIds = useMemo(() => preorderSubtree(rootId, children), [rootId, children]);
+
+  /** 每节点标签在归一化 x 上的半宽，由 Canvas 实测截断后文本得到 */
+  const labelHalfWidthNorm = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const id of treeNodeIds) {
+      const text = shortLabelText(getLabel(id), LAYOUT_LABEL_MAX_CHARS);
+      const wPx = measureAssocMinimapLabelPx(text, 600, LABEL_FONT_PX) * LABEL_MEASURE_SAFETY;
+      const halfNorm = wPx / 2 / MINIMAP_REF_CONTENT_WIDTH_PX;
+      map.set(id, Math.min(Math.max(halfNorm, 0.02), 0.48));
+    }
+    return map;
+  }, [treeNodeIds, getLabel]);
+
   const { layout, edges, maxDepth } = useMemo(() => {
-    const { positions, maxDepth: md } = layoutAssocTreeMiniMap(rootId, children);
+    const { positions, maxDepth: md } = layoutAssocTreeMiniMap(rootId, children, {
+      getLabel,
+      labelMaxChars: LAYOUT_LABEL_MAX_CHARS,
+      labelHalfWidthNorm,
+    });
     const edgesOut: { parent: string; child: string }[] = [];
     for (const [p, arr] of Object.entries(children)) {
       if (!positions.has(p)) continue;
@@ -92,35 +126,59 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
       }
     }
     return { layout: positions, edges: edgesOut, maxDepth: md };
-  }, [rootId, children]);
+  }, [rootId, children, getLabel, labelHalfWidthNorm]);
+
+  /** 布局允许 x>1（横向展开），这里按实际 span 扩展逻辑宽度，通过平移查看 */
+  const contentMaxXNorm = useMemo(() => {
+    let mx = 1;
+    for (const p of layout.values()) mx = Math.max(mx, p.x);
+    return mx;
+  }, [layout]);
+  const mapW = MAP_W * contentMaxXNorm;
+  const maxVw = mapW;
+  const [vb, setVb] = useState<ViewBoxState>(INITIAL_VB);
+
+  useEffect(() => {
+    // 内容宽度变化时重置到全图，确保新增节点后可见
+    setVb({ vx: 0, vy: 0, vw: mapW });
+  }, [mapW, rootId]);
 
   const trailSet = useMemo(() => (trailIds ? new Set(trailIds) : null), [trailIds]);
   const arrowMarkerId = useId().replace(/:/g, '');
 
-  const [vb, setVb] = useState<ViewBoxState>(INITIAL_VB);
   const viewportRef = useRef<HTMLDivElement>(null);
   const panning = useRef(false);
   const lastPtr = useRef({ x: 0, y: 0 });
   const applyZoomAtRef = useRef<(sx: number, sy: number, factor: number) => void>(() => {});
 
-  const resetView = useCallback(() => setVb(INITIAL_VB), []);
+  const resetView = useCallback(() => setVb({ vx: 0, vy: 0, vw: mapW }), [mapW]);
 
   const applyZoomAt = useCallback((sx: number, sy: number, factor: number) => {
     setVb((prev) => {
       const prevVh = vhFromVw(prev.vw);
-      const vw = clamp(prev.vw * factor, MIN_VW, MAX_VW);
+      const vw = clamp(prev.vw * factor, MIN_VW, maxVw);
       const vh = vhFromVw(vw);
       const vx = prev.vx + sx * (prev.vw - vw);
       const vy = prev.vy + sy * (prevVh - vh);
       return {
-        vx: clamp(vx, 0, MAP_W - vw),
+        vx: clamp(vx, 0, mapW - vw),
         vy: clamp(vy, 0, MAP_H - vh),
         vw,
       };
     });
-  }, []);
+  }, [maxVw, mapW]);
 
   applyZoomAtRef.current = applyZoomAt;
+
+  useLayoutEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const update = () => setViewportPxW(el.getBoundingClientRect().width);
+    update();
+    const ro = new ResizeObserver(() => update());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const el = viewportRef.current;
@@ -168,12 +226,12 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
       const dvx = (-dx / rect.width) * prev.vw;
       const dvy = (-dy / rect.height) * prevVh;
       return {
-        vx: clamp(prev.vx + dvx, 0, MAP_W - prev.vw),
+        vx: clamp(prev.vx + dvx, 0, mapW - prev.vw),
         vy: clamp(prev.vy + dvy, 0, MAP_H - prevVh),
         vw: prev.vw,
       };
     });
-  }, []);
+  }, [mapW]);
 
   const onPanPointerUp = useCallback((e: React.PointerEvent) => {
     panning.current = false;
@@ -195,7 +253,51 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
 
   const vbVh = vhFromVw(vb.vw);
 
-  const labelMaxChars = layout.size > 14 ? 7 : layout.size > 8 ? 8 : 10;
+  const vpW = Math.max(viewportPxW, 1);
+  const labelFontUser =
+    viewportPxW > 0 ? (LABEL_FONT_PX * vb.vw) / vpW : LABEL_FONT_U_FALLBACK;
+  const labelGapUser =
+    viewportPxW > 0 ? (LABEL_GAP_PX * vb.vw) / vpW : LABEL_GAP_U_FALLBACK;
+  const labelLaneGapUser = viewportPxW > 0 ? (LABEL_LANE_GAP_PX * vb.vw) / vpW : 0.4;
+
+  const labelTextById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const id of layout.keys()) {
+      m.set(id, shortLabelText(getLabel(id), LAYOUT_LABEL_MAX_CHARS));
+    }
+    return m;
+  }, [layout, getLabel]);
+
+  /** 按同层碰撞检测为标签分配 lane（0,1,2...），不改字号，仅通过多行错位提升可读性 */
+  const labelLaneById = useMemo(() => {
+    const byDepth = new Map<number, Array<{ id: string; cx: number; w: number }>>();
+    const minGapUser = labelFontUser * 0.35;
+    for (const [id, pos] of layout.entries()) {
+      const p = toSvgCoords(pos.x / contentMaxXNorm, pos.depth, maxDepth);
+      const cx = p.cx * contentMaxXNorm;
+      const text = labelTextById.get(id) ?? '';
+      const wPx = measureAssocMinimapLabelPx(text, 600, LABEL_FONT_PX) * LABEL_MEASURE_SAFETY;
+      const wUser = (wPx * vb.vw) / vpW;
+      if (!byDepth.has(pos.depth)) byDepth.set(pos.depth, []);
+      byDepth.get(pos.depth)!.push({ id, cx, w: wUser });
+    }
+    const out = new Map<string, number>();
+    for (const items of byDepth.values()) {
+      items.sort((a, b) => a.cx - b.cx);
+      const laneRightBound: number[] = [];
+      for (const item of items) {
+        let lane = 0;
+        while (lane < laneRightBound.length) {
+          if (item.cx - item.w / 2 >= laneRightBound[lane] + minGapUser) break;
+          lane += 1;
+        }
+        if (lane === laneRightBound.length) laneRightBound.push(-Infinity);
+        laneRightBound[lane] = item.cx + item.w / 2;
+        out.set(item.id, lane);
+      }
+    }
+    return out;
+  }, [layout, contentMaxXNorm, maxDepth, labelTextById, vb.vw, vpW, labelFontUser]);
 
   return (
     <div className={`assoc-minimap ${className ?? ''}`.trim()}>
@@ -243,7 +345,7 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
           <rect
             x={0}
             y={0}
-            width={MAP_W}
+            width={mapW}
             height={MAP_H}
             fill="transparent"
             className="assoc-minimap-pan-layer"
@@ -256,8 +358,10 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
             const pp = layout.get(pid);
             const cp = layout.get(cid);
             if (!pp || !cp) return null;
-            const a = toSvgCoords(pp.x, pp.depth, maxDepth);
-            const b = toSvgCoords(cp.x, cp.depth, maxDepth);
+            const a = toSvgCoords(pp.x / contentMaxXNorm, pp.depth, maxDepth);
+            const b = toSvgCoords(cp.x / contentMaxXNorm, cp.depth, maxDepth);
+            a.cx *= contentMaxXNorm;
+            b.cx *= contentMaxXNorm;
             return (
               <line
                 key={`${pid}-${cid}`}
@@ -271,7 +375,9 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
             );
           })}
           {[...layout.entries()].map(([id, pos]) => {
-            const { cx, cy } = toSvgCoords(pos.x, pos.depth, maxDepth);
+            const p = toSvgCoords(pos.x / contentMaxXNorm, pos.depth, maxDepth);
+            const cx = p.cx * contentMaxXNorm;
+            const cy = p.cy;
             const isRoot = id === rootId;
             const isFocus = focusId === id;
             const onTrail = trailSet?.has(id) ?? false;
@@ -280,8 +386,14 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
             const r = isFocus ? 5.2 : onTrail ? 4.4 : 3.6;
             const clickable = Boolean(onNodeClick);
             const raw = getLabel(id);
-            const labelText = shortLabelText(raw, labelMaxChars);
-            const labelY = cy + r + LABEL_GAP_U + LABEL_FONT_U / 2;
+            const labelText = shortLabelText(raw, LAYOUT_LABEL_MAX_CHARS);
+            const lane = labelLaneById.get(id) ?? 0;
+            const labelY =
+              cy +
+              r +
+              labelGapUser +
+              labelFontUser / 2 +
+              lane * (labelFontUser + labelLaneGapUser);
             return (
               <g
                 key={id}
@@ -317,7 +429,10 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
                   y={labelY}
                   textAnchor="middle"
                   dominantBaseline="middle"
-                  fontSize={LABEL_FONT_U}
+                  fontSize={labelFontUser}
+                  stroke="rgba(2,6,23,0.9)"
+                  strokeWidth={0.9}
+                  paintOrder="stroke"
                   className="assoc-minimap-node-label"
                 >
                   {labelText}
@@ -329,8 +444,8 @@ export const AssocTreeMiniMap: React.FC<AssocTreeMiniMapProps> = ({
       </div>
       <p className="assoc-minimap-hint hint">
         {onNodeClick
-          ? '滚轮缩放 · 空白处拖拽平移 · 双击空白重置 · 点击节点定位'
-          : '滚轮缩放 · 空白处拖拽平移 · 双击空白重置'}
+          ? '滚轮缩放 · 空白处拖拽平移 · 双击空白重置 · 点击节点定位 · 标签自动错行避让'
+          : '滚轮缩放 · 空白处拖拽平移 · 双击空白重置 · 标签自动错行避让'}
       </p>
     </div>
   );

@@ -38,6 +38,8 @@ type AssocStateLegacy = {
 const STORAGE_PREFIX = 'flashcard-assoc-';
 /** 每个节点最多子节点数（单向出边） */
 const MAX_CHILDREN = 6;
+/** 桌面双栏：左栏合理高度下限（与 CSS min-height 一致）。右栏低于此高度时不做左右等高对齐，避免矮视窗下列表被压得过扁。 */
+const ASSOC_LEFT_PANEL_MIN_HEIGHT_PX = 520;
 
 function truncate(s: string, n: number): string {
   const t = (s ?? '').trim();
@@ -88,6 +90,21 @@ function removeChildSubtree(
   if (next[parentId].length === 0) delete next[parentId];
   for (const id of subtree) {
     delete next[id];
+  }
+  return next;
+}
+
+/** 将树中的某节点 id 替换为新 id，保持父子结构不变（新 id 必须未在树中使用） */
+function replaceNodeIdInTree(
+  children: Record<string, string[]>,
+  fromId: string,
+  toId: string,
+): Record<string, string[]> {
+  if (fromId === toId) return children;
+  const next: Record<string, string[]> = {};
+  for (const [parent, arr] of Object.entries(children)) {
+    const mappedParent = parent === fromId ? toId : parent;
+    next[mappedParent] = arr.map((c) => (c === fromId ? toId : c));
   }
   return next;
 }
@@ -145,11 +162,15 @@ export const LabAssocPage: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [replaceTargetId, setReplaceTargetId] = useState<string | null>(null);
 
   const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const rightPanelRef = useRef<HTMLElement | null>(null);
   const focusCardRef = useRef<HTMLDivElement | null>(null);
   const topCardRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const [wirePoints, setWirePoints] = useState<Record<string, { x: number; y: number }>>({});
+  /** 桌面双栏：左栏高度与右栏一致（避免 Flex 行高=max(左,右) 导致左侧更长） */
+  const [assocTwoColLeftHeightPx, setAssocTwoColLeftHeightPx] = useState<number | null>(null);
 
   const cardsOfDeck = useMemo(
     () => state.cards.filter((c) => c.deckId === deckId),
@@ -244,6 +265,40 @@ export const LabAssocPage: React.FC = () => {
     setChildrenMap((prev) => removeChildSubtree(prev, parentId, childId));
   };
 
+  const startReplaceNode = useCallback(
+    (nodeId: string) => {
+      if (!treeNodes.has(nodeId)) return;
+      setReplaceTargetId(nodeId);
+      showFeedback('已进入替换模式：请在左侧选择一张卡片替换该节点');
+    },
+    [treeNodes, showFeedback],
+  );
+
+  const cancelReplaceNode = useCallback(() => {
+    setReplaceTargetId(null);
+    showFeedback('已取消替换模式');
+  }, [showFeedback]);
+
+  const applyReplaceNode = useCallback(
+    (nextId: string) => {
+      if (!replaceTargetId) return;
+      if (!treeNodes.has(replaceTargetId)) {
+        setReplaceTargetId(null);
+        return;
+      }
+      if (usedSet.has(nextId)) {
+        showFeedback('该卡片已在图谱中，无法用于替换');
+        return;
+      }
+      setChildrenMap((prev) => replaceNodeIdInTree(prev, replaceTargetId, nextId));
+      if (rootId === replaceTargetId) setRootId(nextId);
+      if (focusId === replaceTargetId) setFocusId(nextId);
+      setReplaceTargetId(null);
+      showFeedback('已替换节点卡片，树结构保持不变');
+    },
+    [replaceTargetId, treeNodes, usedSet, rootId, focusId, showFeedback],
+  );
+
   const clearAll = () => {
     setRootId(null);
     setFocusId(null);
@@ -255,18 +310,6 @@ export const LabAssocPage: React.FC = () => {
       // ignore
     }
     showFeedback('已清空本卡组的联想图');
-  };
-
-  const clearFocusReset = () => {
-    setRootId(null);
-    setFocusId(null);
-    setChildrenMap({});
-    try {
-      localStorage.removeItem(storageKey);
-    } catch {
-      // ignore
-    }
-    showFeedback('已清空图谱，请重新添加首张卡片');
   };
 
   const measureWires = useCallback(() => {
@@ -297,6 +340,38 @@ export const LabAssocPage: React.FC = () => {
     measureWires();
   }, [measureWires, childrenMap, feedback]);
 
+  useLayoutEffect(() => {
+    const rightEl = rightPanelRef.current;
+    if (!rightEl) return;
+
+    const mq = window.matchMedia('(min-width: 900px)');
+    const update = () => {
+      if (!mq.matches) {
+        setAssocTwoColLeftHeightPx(null);
+        return;
+      }
+      const h = Math.round(rightEl.getBoundingClientRect().height);
+      // 右栏过矮时不强制左栏等高，交给 CSS min-height 保证列表可视区
+      if (h < ASSOC_LEFT_PANEL_MIN_HEIGHT_PX) {
+        setAssocTwoColLeftHeightPx(null);
+        return;
+      }
+      setAssocTwoColLeftHeightPx(h);
+    };
+
+    const ro = new ResizeObserver(update);
+    ro.observe(rightEl);
+    mq.addEventListener('change', update);
+    window.addEventListener('resize', update);
+    update();
+
+    return () => {
+      ro.disconnect();
+      mq.removeEventListener('change', update);
+      window.removeEventListener('resize', update);
+    };
+  }, []);
+
   useEffect(() => {
     const ws = workspaceRef.current;
     if (!ws) return;
@@ -312,6 +387,12 @@ export const LabAssocPage: React.FC = () => {
   useEffect(() => {
     loadedStorageKeyRef.current = null;
   }, [storageKey]);
+
+  useEffect(() => {
+    if (replaceTargetId && !treeNodes.has(replaceTargetId)) {
+      setReplaceTargetId(null);
+    }
+  }, [replaceTargetId, treeNodes]);
 
   useEffect(() => {
     if (!deckId || cardsOfDeck.length === 0) return;
@@ -490,7 +571,19 @@ export const LabAssocPage: React.FC = () => {
       )}
 
       <div className="lab-assoc-grid lab-assoc-grid-wireframe">
-        <section className="lab-assoc-panel card-surface lab-assoc-panel-left">
+        <section
+          className="lab-assoc-panel card-surface lab-assoc-panel-left"
+          style={
+            assocTwoColLeftHeightPx != null
+              ? {
+                  height: assocTwoColLeftHeightPx,
+                  minHeight: assocTwoColLeftHeightPx,
+                  maxHeight: assocTwoColLeftHeightPx,
+                  overflow: 'hidden',
+                }
+              : undefined
+          }
+        >
           <h3 className="lab-section-title">搜索并选择卡片</h3>
 
           <label className="label" style={{ marginTop: 8 }}>
@@ -535,6 +628,19 @@ export const LabAssocPage: React.FC = () => {
               以下为尚未加入树的卡片；已加入的不可重复添加。
             </p>
           )}
+          {replaceTargetId && (
+            <p className="hint small" style={{ marginTop: 8 }}>
+              当前为<strong>替换模式</strong>：点击下方任一卡片可替换节点；
+              <button
+                type="button"
+                className="button button-ghost button-sm"
+                style={{ marginLeft: 8 }}
+                onClick={() => setReplaceTargetId(null)}
+              >
+                取消替换
+              </button>
+            </p>
+          )}
 
           <div className="lab-assoc-results lab-assoc-results-left" role="list">
             {cardsOfDeck.length === 0 && <p className="hint">该卡组暂无卡片。</p>}
@@ -544,9 +650,15 @@ export const LabAssocPage: React.FC = () => {
                 <button
                   type="button"
                   className="button button-primary lab-assoc-result-btn"
-                  onClick={() => addCardToGraph(c.id)}
+                  onClick={() =>
+                    replaceTargetId ? applyReplaceNode(c.id) : addCardToGraph(c.id)
+                  }
                 >
-                  {!rootId ? '加入图谱（首张）' : '添加为子节点'}
+                  {replaceTargetId
+                    ? '替换该节点'
+                    : !rootId
+                      ? '加入图谱（首张）'
+                      : '添加为子节点'}
                 </button>
               </article>
             ))}
@@ -563,7 +675,10 @@ export const LabAssocPage: React.FC = () => {
           </div>
         </section>
 
-        <section className="lab-assoc-panel card-surface lab-assoc-panel-graph lab-assoc-panel-graph-wireframe">
+        <section
+          ref={rightPanelRef}
+          className="lab-assoc-panel card-surface lab-assoc-panel-graph lab-assoc-panel-graph-wireframe"
+        >
           <h3 className="lab-section-title">联想图（树）</h3>
 
           {rootId && treeNodes.size > 0 && (
@@ -670,6 +785,40 @@ export const LabAssocPage: React.FC = () => {
                               </div>
                             </details>
                           ) : null}
+
+                          <div
+                            style={{
+                              display: 'flex',
+                              gap: 8,
+                              marginTop: 10,
+                              flexWrap: 'wrap',
+                            }}
+                          >
+                            <button
+                              type="button"
+                              className="button button-ghost button-sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (replaceTargetId === id) {
+                                  cancelReplaceNode();
+                                  return;
+                                }
+                                startReplaceNode(id);
+                              }}
+                            >
+                              {replaceTargetId === id ? '取消更改' : '更改'}
+                            </button>
+                            <button
+                              type="button"
+                              className="button button-ghost button-sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeDirectedEdge(focusId, id);
+                              }}
+                            >
+                              删除
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -694,13 +843,38 @@ export const LabAssocPage: React.FC = () => {
                         </div>
                       </details>
                     ) : null}
-                    <button
-                      type="button"
-                      className="button button-ghost button-sm lab-assoc-focus-reset"
-                      onClick={clearFocusReset}
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 8,
+                        marginTop: 12,
+                        flexWrap: 'wrap',
+                      }}
                     >
-                      重新选择起始
-                    </button>
+                      <button
+                        type="button"
+                        className="button button-ghost button-sm"
+                        onClick={() => {
+                          if (replaceTargetId === focusId) {
+                            cancelReplaceNode();
+                            return;
+                          }
+                          startReplaceNode(focusId);
+                        }}
+                      >
+                        {replaceTargetId === focusId ? '取消更改' : '更改'}
+                      </button>
+                      <button
+                        type="button"
+                        className="button button-ghost button-sm"
+                        onClick={() => {
+                          clearAll();
+                        }}
+                      >
+                        删除
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
