@@ -321,6 +321,7 @@ export const LabPage: React.FC = () => {
         back: c.back.trim(),
         tags: [],
         mastery: 0,
+        repetitions: 0,
         easeFactor: 2.5,
         interval: 24 * 60 * 60 * 1000,
         nextReview: null,

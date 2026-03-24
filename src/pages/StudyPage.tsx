@@ -2,7 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useFlashcard } from '../context/FlashcardContext';
 import { CardRenderer } from '../components/CardRenderer';
-import { getDailyProgress, getTodayStart, previewNextIntervals } from '../domain/scheduler';
+import {
+  getDailyProgress,
+  getTodayStart,
+  isRetiredCard,
+  previewNextIntervals,
+  RETIRED_MASTERY,
+} from '../domain/scheduler';
 import type { ReviewRating } from '../domain/models';
 
 
@@ -13,7 +19,8 @@ const LimitBar: React.FC<{
   limit: number;
   colorClass: string;
 }> = ({ label, done, limit, colorClass }) => {
-  const pct = Math.min(100, (done / limit) * 100);
+  const safeLimit = Math.max(0, limit);
+  const pct = safeLimit > 0 ? Math.min(100, (done / safeLimit) * 100) : 0;
   const reached = done >= limit;
   return (
     <div className="limit-bar-wrap">
@@ -69,32 +76,33 @@ export const StudyPage: React.FC = () => {
     [state.cards, deckId],
   );
 
-  // 今日各分类卡片数量（受每日上限限制，与 LimitBar 保持一致）
+  // 今日各分类卡片数量
   const todayStats = useMemo(() => {
     const now = getNow();
     const todayStart = getTodayStart(now);
+    const activeCards = cardsOfDeck.filter((c) => !isRetiredCard(c));
 
-    const newCardsAll    = cardsOfDeck.filter((c) => c.lastReviewAt === null);
-    const learningCards  = cardsOfDeck.filter(
+    const newCardsAll    = activeCards.filter((c) => c.lastReviewAt === null);
+    const learningCards  = activeCards.filter(
       (c) => c.lastReviewAt !== null && c.lastReviewAt >= todayStart && (c.nextReview ?? 0) <= now,
     );
-    const reviewCardsAll = cardsOfDeck.filter(
+    const reviewCardsAll = activeCards.filter(
       (c) => c.lastReviewAt !== null && c.lastReviewAt < todayStart && (c.nextReview ?? 0) <= now,
     );
-    const masteredCards  = cardsOfDeck.filter((c) => c.mastery >= 3);
+    const masteredCards  = cardsOfDeck.filter((c) => (c.mastery ?? 0) >= RETIRED_MASTERY);
 
-    // 计算今日已用配额，推算今日还能学的上限
+    // 计算今日已用新卡配额，推算今日还能学的新卡上限
     const { newToday, reviewToday } = deckId
       ? getDailyProgress(state.reviewLogs, deckId, now)
       : { newToday: 0, reviewToday: 0 };
     const extraLimit = practiceSession?.target ?? 0;
     const newLimit    = (deck?.newPerDay ?? 0) + extraLimit;
-    const reviewLimit = (deck?.reviewPerDay ?? 0) + extraLimit;
 
     // 今日还能学的新卡数（不超过实际可用新卡数）
     const newRemaining    = Math.min(newCardsAll.length,    Math.max(0, newLimit    - newToday));
-    // 今日还能复习的旧卡数（不超过实际到期卡数）
-    const reviewRemaining = Math.min(reviewCardsAll.length, Math.max(0, reviewLimit - reviewToday));
+    // 当前需要复习的旧卡数（复习不设上限，直接按到期数量）
+    // 注意：reviewCardsAll 已经是“此刻到期且待复习”的数量，不能再减 reviewToday。
+    const reviewRemaining = reviewCardsAll.length;
 
     return {
       newRemaining,
@@ -113,12 +121,12 @@ export const StudyPage: React.FC = () => {
     [currentStudyCard],
   );
 
-  // “今日复习”进度条分母使用实际需要复习的总量（到期旧卡），
-  // 避免展示为与“今日新卡计划”相同的固定上限。
+  // “今日复习”分母采用：今日已复习 + 当前待复习（含学习中到期），
+  // 与实际仍需处理的复习任务口径保持一致。
   const reviewNeedTotal = useMemo(() => {
     if (!dailyProgress) return 0;
-    return Math.max(todayStats.totalReviewCards, dailyProgress.reviewToday);
-  }, [todayStats.totalReviewCards, dailyProgress]);
+    return dailyProgress.reviewToday + todayStats.reviewRemaining + todayStats.learningRemaining;
+  }, [todayStats.reviewRemaining, todayStats.learningRemaining, dailyProgress]);
 
   const handleReveal = () => setRevealed(true);
 
@@ -147,10 +155,8 @@ export const StudyPage: React.FC = () => {
     if (todayStats.total === 0) return 'no-cards';
     if (dailyProgress) {
       const newFull    = dailyProgress.newToday >= dailyProgress.newLimit;
-      const reviewFull = dailyProgress.reviewToday >= dailyProgress.reviewLimit;
       const noLearning = todayStats.learningRemaining === 0;
-      if (noLearning && newFull && reviewFull) return 'limits-reached';
-      if (noLearning && reviewFull && todayStats.newRemaining === 0) return 'limits-reached';
+      if (noLearning && newFull && todayStats.newRemaining === 0) return 'limits-reached';
     }
     return 'all-done';
   }, [deck, todayStats, dailyProgress, practiceSession, currentStudyCard]);
@@ -173,7 +179,7 @@ export const StudyPage: React.FC = () => {
   const ratings: { key: ReviewRating; label: string; cls: string }[] = [
     { key: 'again', label: '重来', cls: 'button-rating-again' },
     { key: 'hard',  label: '困难', cls: 'button-rating-hard'  },
-    { key: 'good',  label: '记住', cls: 'button-rating-good'  },
+    { key: 'good',  label: '良好', cls: 'button-rating-good'  },
     { key: 'easy',  label: '简单', cls: 'button-rating-easy'  },
   ];
 
@@ -198,7 +204,7 @@ export const StudyPage: React.FC = () => {
           <LimitBar
             label="今日复习"
             done={dailyProgress.reviewToday}
-            limit={Math.max(1, reviewNeedTotal)}
+            limit={reviewNeedTotal}
             colorClass="limit-bar-amber"
           />
         </div>
@@ -312,8 +318,8 @@ export const StudyPage: React.FC = () => {
             {doneReason === 'no-cards' && '先去「管理卡片」添加一些卡片吧。'}
             {doneReason === 'limits-reached' && (
               <>
-                已达到今日每日新卡（{dailyProgress?.newLimit ?? 0} 张）或复习上限（{dailyProgress?.reviewLimit ?? 0} 张）。
-                <br />可在「设置」中调整每日学习计划，或明天继续。
+                已达到今日每日新卡上限（{dailyProgress?.newLimit ?? 0} 张）。
+                <br />可在「设置」中调整每日学习计划，或明天继续学习到期复习卡。
               </>
             )}
             {doneReason === 'all-done' && '所有到期卡片已复习完毕，系统会在记忆遗忘前提醒你再次复习。'}

@@ -1,4 +1,4 @@
-import type { Card, ReviewLogEntry, ReviewRating } from './models';
+import type { Card, ReviewLogEntry, ReviewRating, ReviewState } from './models';
 
 // ── 工具：今日起始时间戳 ──────────────────────
 export function getTodayStart(now = Date.now()): number {
@@ -69,46 +69,198 @@ export interface ScheduleResult {
 }
 
 const DAY = 24 * 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const INITIAL_EASE = 2.5;
+const MIN_EASE = 1.3;
+const EASY_BONUS = 1.3;
+const HARD_INTERVAL_MULT = 1.2;
+const LAPSE_INTERVAL_MULT = 0.5;
+const LEARNING_STEPS_MS = [1 * MINUTE, 10 * MINUTE];
+const RELEARNING_STEPS_MS = [10 * MINUTE];
+const GRADUATING_INTERVAL_MS = 1 * DAY;
+const EASY_GRADUATE_INTERVAL_MS = 4 * DAY;
+export const RETIRED_MASTERY = 5;
 
-export function scheduleReview(card: Card, rating: ReviewRating, now: number): ScheduleResult {
-  const previousInterval = card.interval || DAY;
-  let ease = card.easeFactor || 2.5;
-  let interval = previousInterval;
+function inferReviewState(card: Card): ReviewState {
+  if (card.reviewState) return card.reviewState;
+  if (card.lastReviewAt === null) return 'new';
+  return 'review';
+}
 
-  switch (rating) {
-    case 'again':
-      ease = Math.max(1.3, ease - 0.2);
-      interval = DAY;
-      break;
-    case 'hard':
-      ease = Math.max(1.3, ease - 0.05);
-      interval = Math.max(DAY, previousInterval * 1.2);
-      break;
-    case 'good':
-      interval = previousInterval * ease;
-      break;
-    case 'easy':
-      ease += 0.05;
-      interval = previousInterval * (ease + 0.15);
-      break;
-    default:
-      break;
+export function isRetiredCard(card: Card): boolean {
+  return (card.mastery ?? 0) >= RETIRED_MASTERY;
+}
+
+function getDueAt(card: Card): number {
+  return card.nextReview ?? 0;
+}
+
+function clampEase(v: number): number {
+  return Math.max(MIN_EASE, v);
+}
+
+function applyLearningStep(
+  card: Card,
+  now: number,
+  rating: ReviewRating,
+  stepMs: number[],
+  mode: 'learning' | 'relearning',
+): Card {
+  const ease = card.easeFactor || INITIAL_EASE;
+  const step = card.learningStep ?? 0;
+  const currentDelay = stepMs[Math.min(step, stepMs.length - 1)] ?? stepMs[0] ?? MINUTE;
+
+  if (rating === 'again') {
+    return {
+      ...card,
+      easeFactor: clampEase(ease - 0.2),
+      interval: stepMs[0] ?? MINUTE,
+      nextReview: now + (stepMs[0] ?? MINUTE),
+      lastReviewAt: now,
+      reviewState: mode,
+      learningStep: 0,
+      lapses: (card.lapses ?? 0) + 1,
+      reps: (card.reps ?? 0) + 1,
+      updatedAt: now,
+    };
   }
 
-  const masteryDelta =
-    rating === 'again' ? -1 : rating === 'hard' ? 0 : rating === 'good' ? 1 : 2;
+  if (rating === 'hard') {
+    const hardDelay = Math.max(MINUTE, Math.round(currentDelay * 1.5));
+    return {
+      ...card,
+      easeFactor: clampEase(ease - 0.05),
+      interval: hardDelay,
+      nextReview: now + hardDelay,
+      lastReviewAt: now,
+      reviewState: mode,
+      learningStep: step,
+      reps: (card.reps ?? 0) + 1,
+      updatedAt: now,
+    };
+  }
 
-  const updatedCard: Card = {
+  if (rating === 'easy') {
+    return {
+      ...card,
+      easeFactor: ease + 0.15,
+      interval: EASY_GRADUATE_INTERVAL_MS,
+      nextReview: now + EASY_GRADUATE_INTERVAL_MS,
+      lastReviewAt: now,
+      reviewState: 'review',
+      learningStep: 0,
+      reps: (card.reps ?? 0) + 1,
+      updatedAt: now,
+    };
+  }
+
+  // good: 推进学习步，最后一步毕业到 review
+  const nextStep = step + 1;
+  if (nextStep < stepMs.length) {
+    const nextDelay = stepMs[nextStep] ?? currentDelay;
+    return {
+      ...card,
+      interval: nextDelay,
+      nextReview: now + nextDelay,
+      lastReviewAt: now,
+      reviewState: mode,
+      learningStep: nextStep,
+      reps: (card.reps ?? 0) + 1,
+      updatedAt: now,
+    };
+  }
+
+  const graduateInterval =
+    mode === 'relearning'
+      ? Math.max(GRADUATING_INTERVAL_MS, Math.round((card.interval || DAY) * LAPSE_INTERVAL_MULT))
+      : GRADUATING_INTERVAL_MS;
+  return {
     ...card,
-    easeFactor: ease,
-    interval,
-    nextReview: now + interval,
+    interval: graduateInterval,
+    nextReview: now + graduateInterval,
     lastReviewAt: now,
-    mastery: Math.min(5, Math.max(0, (card.mastery || 0) + masteryDelta)),
+    reviewState: 'review',
+    learningStep: 0,
+    reps: (card.reps ?? 0) + 1,
     updatedAt: now,
   };
+}
 
-  return { updatedCard };
+export function scheduleReview(card: Card, rating: ReviewRating, now: number): ScheduleResult {
+  const state = inferReviewState(card);
+
+  if (state === 'new') {
+    const updated = applyLearningStep(
+      { ...card, reviewState: 'learning', learningStep: card.learningStep ?? 0 },
+      now,
+      rating,
+      LEARNING_STEPS_MS,
+      'learning',
+    );
+    return { updatedCard: updated };
+  }
+
+  if (state === 'learning') {
+    const updated = applyLearningStep(card, now, rating, LEARNING_STEPS_MS, 'learning');
+    return { updatedCard: updated };
+  }
+
+  if (state === 'relearning') {
+    const updated = applyLearningStep(card, now, rating, RELEARNING_STEPS_MS, 'relearning');
+    return { updatedCard: updated };
+  }
+
+  // review 状态：Anki SM-2 风格区间增长
+  const previousInterval = Math.max(DAY, card.interval || DAY);
+  const ease = card.easeFactor || INITIAL_EASE;
+
+  if (rating === 'again') {
+    const relearnDelay = RELEARNING_STEPS_MS[0] ?? (10 * MINUTE);
+    return {
+      updatedCard: {
+        ...card,
+        easeFactor: clampEase(ease - 0.2),
+        interval: relearnDelay,
+        nextReview: now + relearnDelay,
+        lastReviewAt: now,
+        reviewState: 'relearning',
+        learningStep: 0,
+        lapses: (card.lapses ?? 0) + 1,
+        reps: (card.reps ?? 0) + 1,
+        mastery: Math.max(0, (card.mastery || 0) - 1),
+        updatedAt: now,
+      },
+    };
+  }
+
+  let nextEase = ease;
+  let nextInterval = previousInterval;
+  if (rating === 'hard') {
+    nextEase = clampEase(ease - 0.15);
+    nextInterval = Math.max(DAY, Math.round(previousInterval * HARD_INTERVAL_MULT));
+  } else if (rating === 'good') {
+    nextInterval = Math.max(DAY, Math.round(previousInterval * ease));
+  } else {
+    nextEase = ease + 0.15;
+    nextInterval = Math.max(DAY, Math.round(previousInterval * ease * EASY_BONUS));
+  }
+
+  const masteryDelta = rating === 'hard' ? 0 : rating === 'good' ? 1 : 2;
+  return {
+    updatedCard: {
+      ...card,
+      easeFactor: nextEase,
+      interval: nextInterval,
+      nextReview: now + nextInterval,
+      lastReviewAt: now,
+      reviewState: 'review',
+      learningStep: 0,
+      reps: (card.reps ?? 0) + 1,
+      mastery: Math.min(5, Math.max(0, (card.mastery || 0) + masteryDelta)),
+      updatedAt: now,
+    },
+  };
 }
 
 // ── 选取下一张卡片（支持每日限制） ────────────
@@ -117,13 +269,12 @@ export function scheduleReview(card: Card, rating: ReviewRating, now: number): S
 //   1. 学习中 (learning)：今日已首次学习、且 nextReview <= now
 //      → 继续当次学习，不受日限约束
 //   2. 待复习 (review)：lastReviewAt < todayStart 且 nextReview <= now
-//      → 受 reviewPerDay 限制
+//      → 不设每日上限，按到期全量出卡
 //   3. 新卡 (new)：lastReviewAt === null
 //      → 受 newPerDay 限制
 //
 export interface PickOptions {
   newPerDay: number;
-  reviewPerDay: number;
   reviewLogs: ReviewLogEntry[];
   deckId: string;
 }
@@ -133,46 +284,60 @@ export function pickNextCard(
   now: number,
   options?: PickOptions,
 ): Card | null {
-  if (!cards.length) return null;
+  const activeCards = cards.filter((c) => !isRetiredCard(c));
+  if (!activeCards.length) return null;
 
   // 无日限模式（兜底）
   if (!options) {
-    const due = cards.filter((c) => !c.nextReview || c.nextReview <= now);
-    const pool = due.length > 0 ? due : cards;
-    return [...pool].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0] ?? null;
+    const learningCards = activeCards.filter(
+      (c) =>
+        (inferReviewState(c) === 'learning' || inferReviewState(c) === 'relearning') &&
+        getDueAt(c) <= now,
+    );
+    if (learningCards.length > 0) {
+      return [...learningCards].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0];
+    }
+
+    const reviewCards = activeCards.filter(
+      (c) =>
+        inferReviewState(c) === 'review' &&
+        getDueAt(c) <= now,
+    );
+    if (reviewCards.length > 0) {
+      return [...reviewCards].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0];
+    }
+
+    const newCards = activeCards.filter((c) => inferReviewState(c) === 'new');
+    if (newCards.length > 0) return newCards[0];
+    return null;
   }
 
-  const { newPerDay, reviewPerDay, reviewLogs, deckId } = options;
-  const todayStart = getTodayStart(now);
-  const { newToday, reviewToday } = getDailyProgress(reviewLogs, deckId, now);
+  const { newPerDay, reviewLogs, deckId } = options;
+  const { newToday } = getDailyProgress(reviewLogs, deckId, now);
 
   // 1. 学习中（今日首次学习后仍需继续复习的卡片）
-  const learningCards = cards.filter(
+  const learningCards = activeCards.filter(
     (c) =>
-      c.lastReviewAt !== null &&
-      c.lastReviewAt >= todayStart &&
-      (c.nextReview ?? 0) <= now,
+      (inferReviewState(c) === 'learning' || inferReviewState(c) === 'relearning') &&
+      getDueAt(c) <= now,
   );
   if (learningCards.length > 0) {
     return [...learningCards].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0];
   }
 
-  // 2. 待复习的成熟卡片
-  if (reviewToday < reviewPerDay) {
-    const reviewCards = cards.filter(
-      (c) =>
-        c.lastReviewAt !== null &&
-        c.lastReviewAt < todayStart &&
-        (c.nextReview ?? 0) <= now,
-    );
-    if (reviewCards.length > 0) {
-      return [...reviewCards].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0];
-    }
+  // 2. 待复习的成熟卡片（不设复习上限）
+  const reviewCards = activeCards.filter(
+    (c) =>
+      inferReviewState(c) === 'review' &&
+      getDueAt(c) <= now,
+  );
+  if (reviewCards.length > 0) {
+    return [...reviewCards].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0];
   }
 
   // 3. 全新卡片
   if (newToday < newPerDay) {
-    const newCards = cards.filter((c) => c.lastReviewAt === null);
+    const newCards = activeCards.filter((c) => inferReviewState(c) === 'new');
     if (newCards.length > 0) return newCards[0];
   }
 

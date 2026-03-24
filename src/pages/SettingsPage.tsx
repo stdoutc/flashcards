@@ -171,7 +171,7 @@ export const SettingsPage: React.FC = () => {
       >
         <h4 className="setting-subsection-title">学习计划默认值</h4>
         <p className="setting-section-desc">
-          以下为新建卡组时使用的默认值，不影响已有卡组。如需调整已有卡组的每日上限，可在该卡组的「管理卡片」页顶部单独修改。
+          以下为新建卡组时使用的默认值，不影响已有卡组。如需调整已有卡组的每日新卡上限，可在该卡组的「管理卡片」页顶部单独修改。
         </p>
 
         <SettingRow
@@ -204,37 +204,6 @@ export const SettingsPage: React.FC = () => {
           </div>
         </SettingRow>
 
-        <div className="setting-divider" />
-
-        <SettingRow
-          label="每日复习上限"
-          desc="每天最多复习多少张已学过的到期卡片"
-        >
-          <div className="setting-number-row">
-            <input
-              type="range"
-              min={1}
-              max={500}
-              step={5}
-              className="setting-range"
-              value={settings.defaultReviewPerDay}
-              onChange={(e) =>
-                updateSettings({ defaultReviewPerDay: Number(e.target.value) })
-              }
-            />
-            <input
-              type="number"
-              min={1}
-              max={9999}
-              className="input setting-number-input"
-              value={settings.defaultReviewPerDay}
-              onChange={(e) =>
-                updateSettings({ defaultReviewPerDay: Math.max(1, Number(e.target.value)) })
-              }
-            />
-            <span className="setting-unit">张 / 天</span>
-          </div>
-        </SettingRow>
         <div className="setting-divider" />
         <SettingRow label="恢复默认设置" desc="将复习计划默认值与 AI 配置恢复为初始值">
           <button type="button" className="button button-ghost" onClick={handleResetSettings}>

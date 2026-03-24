@@ -17,7 +17,6 @@ export interface DailyProgress {
   newToday: number;
   reviewToday: number;
   newLimit: number;
-  reviewLimit: number;
 }
 
 export interface PracticeSession {
@@ -107,7 +106,6 @@ export function useFlashcardApp(): AppViewModel {
       }
       return pickNextCard(selectedDeckCards, now, {
         newPerDay: selectedDeck.newPerDay,
-        reviewPerDay: selectedDeck.reviewPerDay,
         reviewLogs: state.reviewLogs,
         deckId: selectedDeckId,
       });
@@ -138,7 +136,6 @@ export function useFlashcardApp(): AppViewModel {
       newToday,
       reviewToday,
       newLimit: selectedDeck.newPerDay + extraLimit,
-      reviewLimit: selectedDeck.reviewPerDay + extraLimit,
     };
   }, [selectedDeckId, selectedDeck, state.reviewLogs, practiceSession, isPracticeActiveForSelectedDeck, mockOffset, getNow]);
 

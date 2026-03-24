@@ -1,6 +1,7 @@
 export type CardType = 'basic' | 'cloze' | 'choice';
 
 export type ReviewRating = 'again' | 'hard' | 'good' | 'easy';
+export type ReviewState = 'new' | 'learning' | 'review' | 'relearning';
 
 export interface Deck {
   id: string;
@@ -28,6 +29,14 @@ export interface Card {
   interval: number;
   nextReview: number | null;
   lastReviewAt: number | null;
+  /** Anki-like 调度状态（兼容旧数据，缺失时按旧字段推断） */
+  reviewState?: ReviewState;
+  /** learning/relearning 当前步索引 */
+  learningStep?: number;
+  /** 总复习次数 */
+  reps?: number;
+  /** 失败次数 */
+  lapses?: number;
 }
 
 export interface ReviewLogEntry {

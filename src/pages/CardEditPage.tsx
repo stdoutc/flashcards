@@ -569,18 +569,6 @@ export const CardEditPage: React.FC = () => {
           />
           <span className="deck-limit-unit">张 / 天</span>
         </label>
-        <label className="deck-limit-item">
-          <span>复习上限</span>
-          <input
-            type="number"
-            className="input deck-limit-input"
-            min={1}
-            max={9999}
-            value={deck.reviewPerDay}
-            onChange={(e) => updateDeck(deckId, { reviewPerDay: Math.max(1, Number(e.target.value)) })}
-          />
-          <span className="deck-limit-unit">张 / 天</span>
-        </label>
       </div>
 
       {/* 卡片列表（全宽） */}
