@@ -246,7 +246,7 @@ export const LabAssocPage: React.FC = () => {
       setRootId(id);
       setFocusId(id);
       setChildrenMap({});
-      showFeedback('首张卡片已作为树根（联想模式默认从此张开始）');
+      showFeedback('首张卡片已加入图谱');
       return;
     }
     if (!focusId) return;
@@ -453,16 +453,6 @@ export const LabAssocPage: React.FC = () => {
     setHasUnsavedChanges(graphSnapshot !== lastSavedSnapshotRef.current);
   }, [projectLoaded, graphSnapshot]);
 
-  useEffect(() => {
-    if (!hasUnsavedChanges) return;
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [hasUnsavedChanges]);
-
   const saveCurrentGraph = useCallback(() => {
     if (!projectId || !projectLoaded) return;
     saveAssocProjectGraph(projectId, {
@@ -474,6 +464,52 @@ export const LabAssocPage: React.FC = () => {
     setHasUnsavedChanges(false);
     showFeedback('已保存图谱');
   }, [projectId, projectLoaded, rootId, focusId, childrenMap, graphSnapshot, showFeedback]);
+
+  const autoSaveTimerRef = useRef<number | null>(null);
+  const persistGraphSilent = useCallback(() => {
+    if (!projectId || !projectLoaded) return;
+    saveAssocProjectGraph(projectId, {
+      rootId,
+      focusId,
+      children: childrenMap,
+    });
+    lastSavedSnapshotRef.current = graphSnapshot;
+    setHasUnsavedChanges(false);
+  }, [projectId, projectLoaded, rootId, focusId, childrenMap, graphSnapshot]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      // 兜底：在浏览器触发卸载时同步持久化，避免电脑重启/异常关闭导致丢失。
+      // localStorage 写入是同步的，一般能在 beforeunload 阶段完成。
+      persistGraphSilent();
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [hasUnsavedChanges, persistGraphSilent]);
+
+  // 图谱编辑目前是“手动保存”，但如果发生电脑重启/异常退出，可能不会触发 `beforeunload`。
+  // 这里做一个防抖自动保存，确保重启后可恢复图谱，而不是回到 root/focus 为空的状态。
+  useEffect(() => {
+    if (!projectLoaded || !projectId) return;
+    if (!hasUnsavedChanges) return;
+
+    if (autoSaveTimerRef.current != null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+    }
+
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      persistGraphSilent();
+    }, 800);
+
+    return () => {
+      if (autoSaveTimerRef.current != null) {
+        window.clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [projectLoaded, projectId, hasUnsavedChanges, persistGraphSilent, graphSnapshot]);
 
   const openRecallInNewTab = useCallback(() => {
     if (!rootId) return;
@@ -499,12 +535,9 @@ export const LabAssocPage: React.FC = () => {
       className={`lab-page lab-page--assoc-graph${showAssocBottomToolbar ? ' lab-page--assoc-toolbar' : ''}`}
     >
       <div className="lab-header">
-        <h2 className="lab-title">🧠 知识联想图谱</h2>
+        <h2 className="lab-title">🧠 {projectName || '未命名联想图谱'}</h2>
         <p className="lab-subtitle">
-          当前图谱：<strong>{projectName || '未命名联想图谱'}</strong>。{' '}
-          <Link to="/assoc">返回联想首页</Link>。
-          <br />
-          数据结构为<strong>树</strong>（单向：父→子）。<strong>首张加入的卡片</strong>为树根；之后新卡片作为当前起始的子节点连边。切换起始后，上方仅显示下一级子节点。每节点最多 {MAX_CHILDREN} 个子节点。
+          在左侧加入卡片并在右侧编辑起始/节点；随时可在下方工具栏打开联想回忆。
         </p>
       </div>
 
@@ -551,12 +584,12 @@ export const LabAssocPage: React.FC = () => {
 
           {!rootId && (
             <p className="hint small" style={{ marginTop: 10 }}>
-              点击<strong>「加入图谱（首张）」</strong>将所选卡作为树根（联想模式默认从该张先序遍历整棵树）。
+              点击<strong>「加入图谱（首张）」</strong>加入首张卡片。
             </p>
           )}
           {rootId && (
             <p className="hint small" style={{ marginTop: 10 }}>
-              以下为尚未加入树的卡片；已加入的不可重复添加。
+              未加入图谱的卡片可继续添加；已加入的不可重复添加。
             </p>
           )}
           {replaceTargetId && (
@@ -843,7 +876,7 @@ export const LabAssocPage: React.FC = () => {
           ) : (
             <div className="lab-assoc-placeholder">
               <div className="lab-assoc-placeholder-icon">📋</div>
-              <p className="lab-assoc-placeholder-text">请先在左侧将一张卡片「加入图谱」作为首张（树根）</p>
+              <p className="lab-assoc-placeholder-text">请先在左侧点击「加入图谱」加入首张卡片</p>
             </div>
           )}
         </section>
@@ -851,9 +884,9 @@ export const LabAssocPage: React.FC = () => {
 
       {!showAssocBottomToolbar && (
         <div style={{ marginTop: 18, textAlign: 'center' }}>
-          <Link to="/assoc" className="button button-ghost">
+          <button type="button" className="button button-ghost" onClick={() => navigate('/assoc')}>
             返回联想首页
-          </Link>
+          </button>
         </div>
       )}
 
@@ -892,9 +925,13 @@ export const LabAssocPage: React.FC = () => {
               ) : (
                 <span className="hint small">已保存</span>
               )}
-              <Link to="/assoc" className="button button-ghost button-sm lab-assoc-bottom-toolbar-link">
+              <button
+                type="button"
+                className="button button-ghost button-sm lab-assoc-bottom-toolbar-link"
+                onClick={() => navigate('/assoc')}
+              >
                 返回联想首页
-              </Link>
+              </button>
             </div>
           </div>
         </nav>

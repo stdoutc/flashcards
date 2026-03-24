@@ -20,11 +20,20 @@ export interface DailyProgress {
   reviewLimit: number;
 }
 
+export interface PracticeSession {
+  runId: number;
+  target: number;
+  remaining: number;
+  deckId: string;
+  dayStart: number; // 开始练习的当天 00:00 时间戳
+}
+
 export interface AppViewModel {
   state: FlashcardState;
   selectedDeckId: string | null;
   currentStudyCard: Card | null;
   dailyProgress: DailyProgress | null;
+  practiceSession: PracticeSession | null;
   selectDeck: (deckId: string) => void;
   createDeck: (name: string) => void;
   updateDeck: (deckId: string, patch: Partial<Deck>) => void;
@@ -40,6 +49,8 @@ export interface AppViewModel {
   exportAllJson: () => string;
   importAllJson: (json: string) => boolean;
   clearAllData: () => void;
+  startPracticeCards: (count: number) => void;
+  cancelPracticeCards: () => void;
   // ── 调试专用（仅 IS_DEBUG 模式下有意义）──
   mockOffset: number;
   setMockOffset: (ms: number) => void;
@@ -62,6 +73,15 @@ export function useFlashcardApp(): AppViewModel {
   const [mockOffset, setMockOffset] = useState(0);
   const getNow = useCallback(() => Date.now() + mockOffset, [mockOffset]);
 
+  // “再学 n 张”练习会话：忽略每日上限，直到消耗完 n 张或取消。
+  const [practiceSession, setPracticeSession] = useState<PracticeSession | null>(null);
+
+  const todayStart = useMemo(() => getTodayStart(getNow()), [getNow]);
+  const isPracticeActiveForSelectedDeck =
+    !!practiceSession &&
+    practiceSession.deckId === selectedDeckId &&
+    practiceSession.dayStart === todayStart;
+
   useEffect(() => {
     saveState(state);
   }, [state]);
@@ -80,6 +100,11 @@ export function useFlashcardApp(): AppViewModel {
     () => {
       if (!selectedDeckId || !selectedDeck) return null;
       const now = getNow();
+      if (isPracticeActiveForSelectedDeck && practiceSession) {
+        if (practiceSession.remaining <= 0) return null;
+        // 练习模式：不使用每日上限参数（但仍只在当天+当前卡组时生效）
+        return pickNextCard(selectedDeckCards, now);
+      }
       return pickNextCard(selectedDeckCards, now, {
         newPerDay: selectedDeck.newPerDay,
         reviewPerDay: selectedDeck.reviewPerDay,
@@ -87,7 +112,16 @@ export function useFlashcardApp(): AppViewModel {
         deckId: selectedDeckId,
       });
     },
-    [selectedDeckCards, selectedDeckId, selectedDeck, state.reviewLogs, mockOffset, getNow],
+    [
+      selectedDeckCards,
+      selectedDeckId,
+      selectedDeck,
+      state.reviewLogs,
+      practiceSession,
+      isPracticeActiveForSelectedDeck,
+      mockOffset,
+      getNow,
+    ],
   );
 
   const dailyProgress = useMemo((): DailyProgress | null => {
@@ -97,13 +131,16 @@ export function useFlashcardApp(): AppViewModel {
       selectedDeckId,
       getNow(),
     );
+    // 额外学习（“再学 n 张”）期间，把上限也临时扩展同样的额度，
+    // 但只对“当天的当前卡组”生效。
+    const extraLimit = isPracticeActiveForSelectedDeck && practiceSession ? practiceSession.target : 0;
     return {
       newToday,
       reviewToday,
-      newLimit: selectedDeck.newPerDay,
-      reviewLimit: selectedDeck.reviewPerDay,
+      newLimit: selectedDeck.newPerDay + extraLimit,
+      reviewLimit: selectedDeck.reviewPerDay + extraLimit,
     };
-  }, [selectedDeckId, selectedDeck, state.reviewLogs, mockOffset, getNow]);
+  }, [selectedDeckId, selectedDeck, state.reviewLogs, practiceSession, isPracticeActiveForSelectedDeck, mockOffset, getNow]);
 
   const updateState = (updater: (prev: FlashcardState) => FlashcardState) => {
     setState((prev) => updater(prev));
@@ -215,7 +252,31 @@ export function useFlashcardApp(): AppViewModel {
         lastStudyAt: getNow(),
       },
     }));
+
+    // 练习会话消耗计数：只在“当天 + 当前卡组”对应的练习时消耗
+    setPracticeSession((prev) => {
+      if (!prev) return prev;
+      if (prev.deckId !== selectedDeckId) return prev;
+      if (prev.dayStart !== todayStart) return prev;
+      if (prev.remaining <= 0) return prev;
+      return { ...prev, remaining: Math.max(0, prev.remaining - 1) };
+    });
   };
+
+  const startPracticeCards = (count: number) => {
+    if (!selectedDeckId) return;
+    const n = Math.max(1, Math.floor(Number.isFinite(count) ? count : 1));
+    const capped = Math.min(500, n);
+    setPracticeSession({
+      runId: Date.now(),
+      target: capped,
+      remaining: capped,
+      deckId: selectedDeckId,
+      dayStart: todayStart,
+    });
+  };
+
+  const cancelPracticeCards = () => setPracticeSession(null);
 
   // ── 单卡组导出 ──
   const exportDeckJson = (deckId: string): string | null => {
@@ -442,6 +503,7 @@ export function useFlashcardApp(): AppViewModel {
     selectedDeckId,
     currentStudyCard,
     dailyProgress,
+    practiceSession,
     selectDeck,
     createDeck,
     updateDeck,
@@ -457,6 +519,8 @@ export function useFlashcardApp(): AppViewModel {
     exportAllJson,
     importAllJson,
     clearAllData,
+    startPracticeCards,
+    cancelPracticeCards,
     mockOffset,
     setMockOffset,
     getNow,

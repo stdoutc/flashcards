@@ -23,7 +23,8 @@ export const AssocHomePage: React.FC = () => {
   const [newDeckId, setNewDeckId] = useState(state.decks[0]?.id ?? '');
   const newNameInputRef = useRef<HTMLInputElement>(null);
 
-  const projects = useMemo(() => listAssocProjects(), [refreshKey]);
+  const deckIdsKey = useMemo(() => state.decks.map((d) => d.id).sort().join('|'), [state.decks]);
+  const projects = useMemo(() => listAssocProjects(), [refreshKey, deckIdsKey]);
   const deckNameById = useMemo(
     () => new Map(state.decks.map((d) => [d.id, d.name])),
     [state.decks],
@@ -98,7 +99,7 @@ export const AssocHomePage: React.FC = () => {
                 className="button button-primary"
                 onClick={() => {
                   if (!p.graph.rootId) {
-                    window.alert('该图谱尚未设置树根，请先进入编辑页添加首张卡片。');
+                    window.alert('该图谱尚未设置起始节点，请先进入编辑页添加首张卡片。');
                     return;
                   }
                   // 有些浏览器在成功打开新标签页时仍可能返回 null，
@@ -169,7 +170,7 @@ export const AssocHomePage: React.FC = () => {
             </select>
           </div>
           <p className="hint small" style={{ marginTop: 6 }}>
-            创建后即可在图谱编辑页选择首张卡片（树根）并开始构建关联。
+            创建后进入图谱编辑页开始构建关联。
           </p>
         </div>
         <div className="modal-footer">

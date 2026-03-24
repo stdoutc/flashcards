@@ -35,11 +35,14 @@ const LimitBar: React.FC<{
 
 export const StudyPage: React.FC = () => {
   const { deckId } = useParams<{ deckId: string }>();
-  const { state, selectDeck, currentStudyCard, reviewCurrentCard, dailyProgress, getNow } =
+  const { state, selectDeck, currentStudyCard, reviewCurrentCard, dailyProgress, getNow, practiceSession, startPracticeCards } =
     useFlashcard();
 
   const [revealed, setRevealed] = useState(false);
   const [sessionTotal, setSessionTotal] = useState(0);
+  const [practiceCountInput, setPracticeCountInput] = useState('10');
+  const parsedPracticeN = parseInt(practiceCountInput, 10);
+  const canStartPractice = Number.isFinite(parsedPracticeN) && parsedPracticeN > 0;
 
   useEffect(() => {
     if (deckId) selectDeck(deckId);
@@ -49,6 +52,12 @@ export const StudyPage: React.FC = () => {
   useEffect(() => {
     setRevealed(false);
   }, [currentStudyCard?.id]);
+
+  // 开启“再学”会话后，清零当前统计（本次计数只算练习卡数）
+  useEffect(() => {
+    if (!practiceSession) return;
+    setSessionTotal(0);
+  }, [practiceSession?.runId]);
 
   const deck = useMemo(
     () => state.decks.find((d) => d.id === deckId) ?? null,
@@ -78,8 +87,9 @@ export const StudyPage: React.FC = () => {
     const { newToday, reviewToday } = deckId
       ? getDailyProgress(state.reviewLogs, deckId, now)
       : { newToday: 0, reviewToday: 0 };
-    const newLimit    = deck?.newPerDay    ?? 0;
-    const reviewLimit = deck?.reviewPerDay ?? 0;
+    const extraLimit = practiceSession?.target ?? 0;
+    const newLimit    = (deck?.newPerDay ?? 0) + extraLimit;
+    const reviewLimit = (deck?.reviewPerDay ?? 0) + extraLimit;
 
     // 今日还能学的新卡数（不超过实际可用新卡数）
     const newRemaining    = Math.min(newCardsAll.length,    Math.max(0, newLimit    - newToday));
@@ -96,12 +106,19 @@ export const StudyPage: React.FC = () => {
       totalNewCards: newCardsAll.length,
       totalReviewCards: reviewCardsAll.length,
     };
-  }, [cardsOfDeck, deck, state.reviewLogs, deckId, getNow]);
+  }, [cardsOfDeck, deck, state.reviewLogs, deckId, getNow, practiceSession]);
 
   const intervalPreview = useMemo(
     () => (currentStudyCard ? previewNextIntervals(currentStudyCard) : null),
     [currentStudyCard],
   );
+
+  // “今日复习”进度条分母使用实际需要复习的总量（到期旧卡），
+  // 避免展示为与“今日新卡计划”相同的固定上限。
+  const reviewNeedTotal = useMemo(() => {
+    if (!dailyProgress) return 0;
+    return Math.max(todayStats.totalReviewCards, dailyProgress.reviewToday);
+  }, [todayStats.totalReviewCards, dailyProgress]);
 
   const handleReveal = () => setRevealed(true);
 
@@ -121,6 +138,11 @@ export const StudyPage: React.FC = () => {
 
   // 完成原因分析
   const doneReason = useMemo(() => {
+    if (practiceSession) {
+      if (practiceSession.remaining <= 0) return 'practice-done';
+      // 练习期间但当前没有可学卡片（例如卡组为空）
+      if (!currentStudyCard) return 'practice-stopped';
+    }
     if (!deck) return 'no-deck';
     if (todayStats.total === 0) return 'no-cards';
     if (dailyProgress) {
@@ -131,7 +153,13 @@ export const StudyPage: React.FC = () => {
       if (noLearning && reviewFull && todayStats.newRemaining === 0) return 'limits-reached';
     }
     return 'all-done';
-  }, [deck, todayStats, dailyProgress]);
+  }, [deck, todayStats, dailyProgress, practiceSession, currentStudyCard]);
+
+  const handleStartPractice = () => {
+    const n = parseInt(practiceCountInput, 10);
+    if (!Number.isFinite(n) || n <= 0) return;
+    startPracticeCards(n);
+  };
 
   if (!deckId || !deck) {
     return (
@@ -170,7 +198,7 @@ export const StudyPage: React.FC = () => {
           <LimitBar
             label="今日复习"
             done={dailyProgress.reviewToday}
-            limit={dailyProgress.reviewLimit}
+            limit={Math.max(1, reviewNeedTotal)}
             colorClass="limit-bar-amber"
           />
         </div>
@@ -274,6 +302,10 @@ export const StudyPage: React.FC = () => {
               ? '卡组还没有卡片'
               : doneReason === 'limits-reached'
               ? '今日学习计划已完成！'
+              : doneReason === 'practice-done'
+              ? `再学完 ${practiceSession?.target ?? parsedPracticeN} 张！`
+              : doneReason === 'practice-stopped'
+              ? '再学提前结束！'
               : '本轮已完成！'}
           </div>
           <div className="study-done-sub">
@@ -285,6 +317,8 @@ export const StudyPage: React.FC = () => {
               </>
             )}
             {doneReason === 'all-done' && '所有到期卡片已复习完毕，系统会在记忆遗忘前提醒你再次复习。'}
+            {doneReason === 'practice-done' && '练习已完成。你可以继续再学或返回首页。'}
+            {doneReason === 'practice-stopped' && '当前没有可学卡片可继续练习。'}
           </div>
           {sessionTotal > 0 && (
             <div className="study-done-stats">
@@ -296,6 +330,36 @@ export const StudyPage: React.FC = () => {
             <Link to="/" className="button button-ghost">返回首页</Link>
             <Link to={`/deck/${deckId}/cards`} className="button">管理卡片</Link>
             <Link to="/settings" className="button button-ghost">调整设置</Link>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              marginTop: 12,
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={500}
+              step={1}
+              value={practiceCountInput}
+              onChange={(e) => setPracticeCountInput(e.target.value)}
+              style={{ width: 110, textAlign: 'center' }}
+            />
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={!canStartPractice}
+              onClick={handleStartPractice}
+            >
+              再学 {canStartPractice ? parsedPracticeN : practiceCountInput.trim() || 'n'} 张
+            </button>
           </div>
         </div>
       )}

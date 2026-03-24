@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom';
 import { useFlashcard } from '../context/FlashcardContext';
 import { Modal } from '../components/Modal';
+import { deleteAssocProjectsByDeckId } from '../domain/assocProjectStorage';
 
 type ModalKind = 'create' | 'import' | 'export' | null;
 
@@ -94,6 +95,8 @@ export const HomePage: React.FC = () => {
     const deck = state.decks.find((d) => d.id === deckId);
     if (!deck) return;
     if (!window.confirm(`确定删除卡组「${deck.name}」及其所有卡片吗？`)) return;
+    // 级联删除：删除卡组后，把绑定在该卡组上的联想图谱也一起清掉。
+    deleteAssocProjectsByDeckId(deckId);
     deleteDeck(deckId);
   };
 
@@ -122,7 +125,11 @@ export const HomePage: React.FC = () => {
   const handleBulkDeleteDecks = () => {
     if (selectedDeckIds.size === 0) return;
     if (!window.confirm(`确定删除选中的 ${selectedDeckIds.size} 个卡组及其所有卡片吗？此操作不可撤销。`)) return;
-    Array.from(selectedDeckIds).forEach((deckId) => deleteDeck(deckId));
+    Array.from(selectedDeckIds).forEach((deckId) => {
+      // 级联删除：先清理联想图谱，再删除卡组
+      deleteAssocProjectsByDeckId(deckId);
+      deleteDeck(deckId);
+    });
     setSelectedDeckIds(new Set());
     setBulkMode(false);
   };

@@ -130,3 +130,14 @@ export function deleteAssocProject(id: string): void {
   writeAll(all);
 }
 
+export function deleteAssocProjectsByDeckId(deckId: string): void {
+  const all = readAll().filter((p) => p.deckId !== deckId);
+  writeAll(all);
+}
+
+export function deleteAssocProjectsByDeckIds(deckIds: string[]): void {
+  const idSet = new Set(deckIds);
+  const all = readAll().filter((p) => !idSet.has(p.deckId));
+  writeAll(all);
+}
+

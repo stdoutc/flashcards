@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { Card } from '../../domain/models';
 import { useFlashcardApp } from './useFlashcardApp';
+import { deleteAssocProjectsByDeckId } from '../../domain/assocProjectStorage';
 
 interface CardDraft {
   id?: string;
@@ -77,6 +78,8 @@ export const DeckPage: React.FC = () => {
   const handleDeckDelete = () => {
     if (!selectedDeck) return;
     if (!window.confirm(`确定删除卡组「${selectedDeck.name}」及其所有卡片吗？`)) return;
+    // 级联删除：删除卡组后，绑定在该卡组上的联想图谱也一并移除。
+    deleteAssocProjectsByDeckId(selectedDeck.id);
     deleteDeck(selectedDeck.id);
   };
 

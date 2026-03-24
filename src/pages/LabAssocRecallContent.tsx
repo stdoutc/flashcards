@@ -284,20 +284,7 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
         </div>
       </header>
 
-      <p className="lab-assoc-recall-hint hint">
-        先看<strong>起始卡正面</strong> → 点击翻面看<strong>反面</strong>（此时记为已复习）→ 再点击隐藏起始卡并显示<strong>子卡正面</strong> →
-        点击某一子卡作为<strong>新起始</strong>；重复直至走遍各分支。
-        <span className="lab-assoc-recall-hint-note">
-          {' '}
-          带「已复习」标记表示该节点已至少翻面到反面一次。复习进度保存在本机，关闭标签页后仍保留；点击「完成复习」可清空进度。
-        </span>
-      </p>
-
-      {allVisited && (
-        <p className="lab-assoc-recall-context hint" style={{ color: 'var(--ok, #4ade80)' }}>
-          已从各节点翻面到反面，复习进度已全覆盖。仍可返回上一层或点击「完成复习」清空进度。
-        </p>
-      )}
+      {/* 功能提示已下沉到具体交互区域（避免大段原理说明影响观感） */}
 
       <div
         className={
@@ -345,7 +332,7 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
                 </div>
               </div>
               <p className="lab-assoc-recall-start-hint hint">
-                {!flipped ? '点击翻面（翻面后将记为已复习）' : '再点击隐藏起始卡，显示子卡片（同屏）'}
+                {!flipped ? '点击翻面' : '再点击隐藏起始卡，显示子卡片（同屏）'}
               </p>
             </div>
           )}
@@ -360,7 +347,12 @@ export const AssocRecallContent: React.FC<AssocRecallContentProps> = ({
                       返回上一层
                     </button>
                   ) : (
-                    <p className="hint">已到达树根且无分支。</p>
+                    <>
+                      <button type="button" className="button button-primary" onClick={() => setPhase('showBack')}>
+                        返回上一层
+                      </button>
+                      <p className="hint">已到达起始节点且无分支。</p>
+                    </>
                   )}
                 </div>
               ) : (
