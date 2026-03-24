@@ -40,9 +40,19 @@ const LimitBar: React.FC<{
   );
 };
 
+function getMasteryMeta(mastery: number): { label: string; cls: string; lv: number } {
+  const lv = Math.max(0, Math.min(5, Math.floor(mastery || 0)));
+  if (lv >= 5) return { label: '精通', cls: 'is-mastered', lv };
+  if (lv >= 4) return { label: '掌握', cls: 'is-proficient', lv };
+  if (lv >= 3) return { label: '熟练', cls: 'is-learning', lv };
+  if (lv >= 2) return { label: '学习中', cls: 'is-beginner', lv };
+  if (lv >= 1) return { label: '初学', cls: 'is-beginner', lv };
+  return { label: '未学习', cls: 'is-new', lv };
+}
+
 export const StudyPage: React.FC = () => {
   const { deckId } = useParams<{ deckId: string }>();
-  const { state, selectDeck, currentStudyCard, reviewCurrentCard, dailyProgress, getNow, practiceSession, startPracticeCards } =
+  const { state, selectDeck, currentStudyCard, reviewCurrentCard, markCurrentCardMastered, dailyProgress, getNow, practiceSession, startPracticeCards } =
     useFlashcard();
 
   const [revealed, setRevealed] = useState(false);
@@ -183,6 +193,8 @@ export const StudyPage: React.FC = () => {
     { key: 'easy',  label: '简单', cls: 'button-rating-easy'  },
   ];
 
+  const masteryMeta = currentStudyCard ? getMasteryMeta(currentStudyCard.mastery) : null;
+
   return (
     <div className="study-page">
       {/* 顶部导航 */}
@@ -242,6 +254,11 @@ export const StudyPage: React.FC = () => {
               {currentCardType === 'new'      && <span className="card-type-badge card-type-new">新卡</span>}
               {currentCardType === 'learning' && <span className="card-type-badge card-type-learning">学习中</span>}
               {currentCardType === 'review'   && <span className="card-type-badge card-type-review">复习</span>}
+              {masteryMeta && (
+                <span className={`card-mastery-badge ${masteryMeta.cls}`}>
+                  {masteryMeta.label} · Lv{masteryMeta.lv}
+                </span>
+              )}
             </div>
           )}
 
@@ -283,6 +300,15 @@ export const StudyPage: React.FC = () => {
                     )}
                   </button>
                 ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
+                <button
+                  type="button"
+                  className="button button-ghost"
+                  onClick={markCurrentCardMastered}
+                >
+                  直接标记为掌握
+                </button>
               </div>
               <p className="hint small" style={{ textAlign: 'center', marginTop: 8 }}>
                 根据记忆质量选择——系统会按间隔重复算法安排下次复习时间。

@@ -14,6 +14,16 @@ interface CardDraft {
 
 const EMPTY_DRAFT: CardDraft = { front: '', back: '', tagsText: '' };
 
+function getMasteryMeta(mastery: number): { label: string; cls: string } {
+  const m = Math.max(0, Math.min(5, Math.floor(mastery || 0)));
+  if (m >= 5) return { label: '精通', cls: 'is-mastered' };
+  if (m >= 4) return { label: '掌握', cls: 'is-proficient' };
+  if (m >= 3) return { label: '熟练', cls: 'is-learning' };
+  if (m >= 2) return { label: '学习中', cls: 'is-beginner' };
+  if (m >= 1) return { label: '初学', cls: 'is-beginner' };
+  return { label: '未学习', cls: 'is-new' };
+}
+
 function insertAtCursor(
   el: HTMLTextAreaElement,
   before: string,
@@ -647,6 +657,8 @@ export const CardEditPage: React.FC = () => {
           )}
           {filteredCards.map((card) => {
             const isSelected = selectedIds.has(card.id);
+            const masteryMeta = getMasteryMeta(card.mastery);
+            const masteryLv = Math.max(0, Math.min(5, Math.floor(card.mastery || 0)));
             return (
               <div
                 key={card.id}
@@ -666,6 +678,11 @@ export const CardEditPage: React.FC = () => {
                   className="card-row-main"
                   onClick={bulkMode ? undefined : () => openEditModal(card)}
                 >
+                  <div className="card-row-head">
+                    <span className={`card-mastery-badge ${masteryMeta.cls}`}>
+                      {masteryMeta.label} · Lv{masteryLv}
+                    </span>
+                  </div>
                   <div className="card-front">
                     <CardRenderer content={card.front} compact />
                   </div>

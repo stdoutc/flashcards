@@ -9,7 +9,13 @@ import type {
 } from '../../domain/models';
 import { DEFAULT_SETTINGS, createEmptyState } from '../../domain/models';
 import { loadState, saveState } from '../../services/localStore';
-import { getDailyProgress, getTodayStart, pickNextCard, scheduleReview } from '../../domain/scheduler';
+import {
+  getDailyProgress,
+  getTodayStart,
+  pickNextCard,
+  RETIRED_MASTERY,
+  scheduleReview,
+} from '../../domain/scheduler';
 
 export const IS_DEBUG = import.meta.env.VITE_DEBUG === 'true';
 
@@ -42,6 +48,7 @@ export interface AppViewModel {
   deleteCard: (cardId: string) => void;
   deleteCards: (cardIds: string[]) => void;
   reviewCurrentCard: (rating: ReviewRating) => void;
+  markCurrentCardMastered: () => void;
   exportDeckJson: (deckId: string) => string | null;
   importDeckJson: (json: string) => void;
   updateSettings: (patch: Partial<AppSettings>) => void;
@@ -251,6 +258,48 @@ export function useFlashcardApp(): AppViewModel {
     }));
 
     // 练习会话消耗计数：只在“当天 + 当前卡组”对应的练习时消耗
+    setPracticeSession((prev) => {
+      if (!prev) return prev;
+      if (prev.deckId !== selectedDeckId) return prev;
+      if (prev.dayStart !== todayStart) return prev;
+      if (prev.remaining <= 0) return prev;
+      return { ...prev, remaining: Math.max(0, prev.remaining - 1) };
+    });
+  };
+
+  const markCurrentCardMastered = () => {
+    if (!currentStudyCard) return;
+    const now = getNow();
+    const updatedCard: Card = {
+      ...currentStudyCard,
+      mastery: RETIRED_MASTERY,
+      reviewState: 'review',
+      learningStep: 0,
+      nextReview: null,
+      lastReviewAt: now,
+      reps: (currentStudyCard.reps ?? 0) + 1,
+      updatedAt: now,
+    };
+    const log: ReviewLogEntry = {
+      id: makeId('log'),
+      cardId: updatedCard.id,
+      deckId: updatedCard.deckId,
+      rating: 'easy',
+      reviewedAt: now,
+      intervalBefore: currentStudyCard.interval,
+      intervalAfter: updatedCard.interval,
+    };
+    updateState((prev) => ({
+      ...prev,
+      cards: prev.cards.map((c) => (c.id === updatedCard.id ? updatedCard : c)),
+      reviewLogs: [...prev.reviewLogs, log],
+      stats: {
+        totalReviews: prev.stats.totalReviews + 1,
+        lastStudyAt: now,
+      },
+    }));
+
+    // 在“再学 n 张”会话中，手动标记掌握也视作消耗 1 张
     setPracticeSession((prev) => {
       if (!prev) return prev;
       if (prev.deckId !== selectedDeckId) return prev;
@@ -510,6 +559,7 @@ export function useFlashcardApp(): AppViewModel {
     deleteCard,
     deleteCards,
     reviewCurrentCard,
+    markCurrentCardMastered,
     exportDeckJson,
     importDeckJson,
     updateSettings,

@@ -80,7 +80,14 @@ const LEARNING_STEPS_MS = [1 * MINUTE, 10 * MINUTE];
 const RELEARNING_STEPS_MS = [10 * MINUTE];
 const GRADUATING_INTERVAL_MS = 1 * DAY;
 const EASY_GRADUATE_INTERVAL_MS = 4 * DAY;
-export const RETIRED_MASTERY = 5;
+export const RETIRED_MASTERY = 4;
+
+function applyMasteryDelta(card: Card, rating: ReviewRating): number {
+  // 保证每次完成一次作答都有熟练度反馈：
+  // again 降低；hard/good/easy 逐级提升。
+  const delta = rating === 'again' ? -1 : rating === 'easy' ? 2 : 1;
+  return Math.min(RETIRED_MASTERY, Math.max(0, (card.mastery || 0) + delta));
+}
 
 function inferReviewState(card: Card): ReviewState {
   if (card.reviewState) return card.reviewState;
@@ -122,6 +129,7 @@ function applyLearningStep(
       learningStep: 0,
       lapses: (card.lapses ?? 0) + 1,
       reps: (card.reps ?? 0) + 1,
+      mastery: applyMasteryDelta(card, rating),
       updatedAt: now,
     };
   }
@@ -137,6 +145,7 @@ function applyLearningStep(
       reviewState: mode,
       learningStep: step,
       reps: (card.reps ?? 0) + 1,
+      mastery: applyMasteryDelta(card, rating),
       updatedAt: now,
     };
   }
@@ -151,6 +160,7 @@ function applyLearningStep(
       reviewState: 'review',
       learningStep: 0,
       reps: (card.reps ?? 0) + 1,
+      mastery: applyMasteryDelta(card, rating),
       updatedAt: now,
     };
   }
@@ -167,6 +177,7 @@ function applyLearningStep(
       reviewState: mode,
       learningStep: nextStep,
       reps: (card.reps ?? 0) + 1,
+      mastery: applyMasteryDelta(card, rating),
       updatedAt: now,
     };
   }
@@ -183,6 +194,7 @@ function applyLearningStep(
     reviewState: 'review',
     learningStep: 0,
     reps: (card.reps ?? 0) + 1,
+    mastery: applyMasteryDelta(card, rating),
     updatedAt: now,
   };
 }
@@ -228,7 +240,7 @@ export function scheduleReview(card: Card, rating: ReviewRating, now: number): S
         learningStep: 0,
         lapses: (card.lapses ?? 0) + 1,
         reps: (card.reps ?? 0) + 1,
-        mastery: Math.max(0, (card.mastery || 0) - 1),
+        mastery: applyMasteryDelta(card, rating),
         updatedAt: now,
       },
     };
@@ -246,7 +258,6 @@ export function scheduleReview(card: Card, rating: ReviewRating, now: number): S
     nextInterval = Math.max(DAY, Math.round(previousInterval * ease * EASY_BONUS));
   }
 
-  const masteryDelta = rating === 'hard' ? 0 : rating === 'good' ? 1 : 2;
   return {
     updatedCard: {
       ...card,
@@ -257,7 +268,7 @@ export function scheduleReview(card: Card, rating: ReviewRating, now: number): S
       reviewState: 'review',
       learningStep: 0,
       reps: (card.reps ?? 0) + 1,
-      mastery: Math.min(5, Math.max(0, (card.mastery || 0) + masteryDelta)),
+      mastery: applyMasteryDelta(card, rating),
       updatedAt: now,
     },
   };

@@ -56,8 +56,8 @@ export const App: React.FC = () => {
           {IS_DEBUG && <div className="dbg-banner">🐛 调试模式</div>}
           <header className="app-header">
             <Link to="/" className="app-header-home">
-              <h1>卡片记忆学习 APP</h1>
-              <p className="app-subtitle">多用途 · 高度自定义 · 支持多端</p>
+              <h1>联想记忆卡片</h1>
+              <p className="app-subtitle">图谱联想 · 间隔复习 · 智能掌握</p>
             </Link>
             <nav className="app-nav">
               <NavLink

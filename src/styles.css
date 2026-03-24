@@ -1003,6 +1003,54 @@ a.button { text-decoration: none; }
 
 .card-row-main { flex: 1; min-width: 0; cursor: pointer; }
 
+.card-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+.card-mastery-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.card-mastery-badge.is-new {
+  border-color: rgba(148, 163, 184, 0.45);
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.card-mastery-badge.is-beginner {
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.card-mastery-badge.is-learning {
+  border-color: rgba(59, 130, 246, 0.45);
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.card-mastery-badge.is-proficient {
+  border-color: rgba(16, 185, 129, 0.45);
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.card-mastery-badge.is-mastered {
+  border-color: rgba(34, 197, 94, 0.5);
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.16);
+}
+
 .card-front { font-size: 13px; font-weight: 500; }
 .card-back  { font-size: 12px; color: var(--muted); margin-top: 3px; }
 

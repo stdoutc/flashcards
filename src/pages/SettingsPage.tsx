@@ -399,33 +399,11 @@ export const SettingsPage: React.FC = () => {
         <div className="about-body">
           <div className="about-row">
             <span className="about-key">应用名称</span>
-            <span className="about-val">卡片记忆学习 APP</span>
+            <span className="about-val">联想记忆卡片</span>
           </div>
           <div className="about-row">
             <span className="about-key">版本</span>
             <span className="about-val">0.1.0</span>
-          </div>
-          <div className="about-row">
-            <span className="about-key">最近学习</span>
-            <span className="about-val">{fmtDate(state.stats.lastStudyAt)}</span>
-          </div>
-          <div className="about-row">
-            <span className="about-key">定位</span>
-            <span className="about-val">
-              多用途、高度自定义的卡片记忆工具，支持语言词汇、理科公式、考试考点、编程知识点等多场景学习。
-            </span>
-          </div>
-          <div className="about-row">
-            <span className="about-key">卡片格式</span>
-            <span className="about-val">
-              支持 Markdown 富文本、LaTeX 数学公式、代码块，以及 JSON 格式的卡组导入 / 导出。
-            </span>
-          </div>
-          <div className="about-row">
-            <span className="about-key">复习算法</span>
-            <span className="about-val">
-              基于间隔重复算法（Spaced Repetition），根据记忆遗忘曲线自动安排复习时间。
-            </span>
           </div>
         </div>
       </SettingSection>

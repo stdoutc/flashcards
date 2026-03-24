@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useFlashcard } from '../context/FlashcardContext';
 import { Modal } from '../components/Modal';
 import { deleteAssocProjectsByDeckId } from '../domain/assocProjectStorage';
+import { isRetiredCard } from '../domain/scheduler';
 
 type ModalKind = 'create' | 'import' | 'export' | null;
 
@@ -63,9 +64,14 @@ export const HomePage: React.FC = () => {
     const map: Record<string, { total: number; due: number; newCount: number }> = {};
     for (const deck of state.decks) {
       const cards = state.cards.filter((c) => c.deckId === deck.id);
-      const due = cards.filter(
-        (c) => c.lastReviewAt !== null && (c.nextReview ?? 0) <= now,
-      ).length;
+      const due = cards.filter((c) => {
+        if (isRetiredCard(c)) return false;
+        if (c.lastReviewAt === null) return false;
+        if (c.nextReview == null) return false;
+        // 首页“待复习”仅显示“当前已到点”的复习量。
+        // 复习完归零即隐藏标签，后续到点再自动显示。
+        return c.nextReview <= now;
+      }).length;
       const newCount = cards.filter((c) => c.lastReviewAt === null).length;
       map[deck.id] = { total: cards.length, due, newCount };
     }
