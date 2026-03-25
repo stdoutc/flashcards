@@ -825,7 +825,7 @@ a.button { text-decoration: none; }
 /* 卡片编辑 Modal：上方内容可滚动，底部按钮固定 */
 .card-editor-modal-layout {
   height: 100%;
-  min-height: 0;
+  min-height: calc(100vh - 60px);
   display: flex;
   flex-direction: column;
 }
@@ -1196,7 +1196,7 @@ a.button { text-decoration: none; }
   display: flex;
   flex-direction: column;
   /* 给 flex 列布局提供可用高度空间（确保 editor-actions 可贴到底部） */
-  height: calc(100vh - 60px);
+  max-height: calc(100vh - 60px);
   animation: modal-slide-up 0.18s ease;
   overflow: hidden;
 }

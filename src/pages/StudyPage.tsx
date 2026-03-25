@@ -186,11 +186,12 @@ export const StudyPage: React.FC = () => {
     );
   }
 
+  // 复习按钮：与图中“1~4（简单~艰难）”的阅读习惯一致
   const ratings: { key: ReviewRating; label: string; cls: string }[] = [
-    { key: 'again', label: '重来', cls: 'button-rating-again' },
-    { key: 'hard',  label: '困难', cls: 'button-rating-hard'  },
-    { key: 'good',  label: '良好', cls: 'button-rating-good'  },
-    { key: 'easy',  label: '简单', cls: 'button-rating-easy'  },
+    { key: 'easy', label: '简单', cls: 'button-rating-easy' },
+    { key: 'good', label: '普通', cls: 'button-rating-good' },
+    { key: 'hard', label: '困难', cls: 'button-rating-hard' },
+    { key: 'again', label: '艰难', cls: 'button-rating-again' },
   ];
 
   const masteryMeta = currentStudyCard ? getMasteryMeta(currentStudyCard.mastery) : null;
