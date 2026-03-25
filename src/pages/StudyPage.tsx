@@ -188,10 +188,10 @@ export const StudyPage: React.FC = () => {
 
   // 复习按钮：与图中“1~4（简单~艰难）”的阅读习惯一致
   const ratings: { key: ReviewRating; label: string; cls: string }[] = [
-    { key: 'easy', label: '简单', cls: 'button-rating-easy' },
-    { key: 'good', label: '普通', cls: 'button-rating-good' },
-    { key: 'hard', label: '困难', cls: 'button-rating-hard' },
     { key: 'again', label: '艰难', cls: 'button-rating-again' },
+    { key: 'hard', label: '困难', cls: 'button-rating-hard' },
+    { key: 'good', label: '普通', cls: 'button-rating-good' },
+    { key: 'easy', label: '简单', cls: 'button-rating-easy' },
   ];
 
   const masteryMeta = currentStudyCard ? getMasteryMeta(currentStudyCard.mastery) : null;
@@ -274,6 +274,11 @@ export const StudyPage: React.FC = () => {
               <div className="study-face study-back-face">
                 <div className="study-face-label">反面</div>
                 <CardRenderer content={currentStudyCard.back} className="study-content" />
+                {currentStudyCard.tags?.length > 0 && (
+                  <div className="tag-list" style={{ justifyContent: 'center', marginTop: 10 }}>
+                    {currentStudyCard.tags.map((t) => <span key={t} className="tag">{t}</span>)}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -317,12 +322,6 @@ export const StudyPage: React.FC = () => {
             </div>
           )}
 
-          {/* 标签 */}
-          {currentStudyCard.tags?.length > 0 && (
-            <div className="tag-list" style={{ justifyContent: 'center', marginTop: 8 }}>
-              {currentStudyCard.tags.map((t) => <span key={t} className="tag">{t}</span>)}
-            </div>
-          )}
         </div>
       ) : (
         /* 完成画面 */
