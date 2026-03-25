@@ -57,7 +57,6 @@ export const App: React.FC = () => {
           <header className="app-header">
             <Link to="/" className="app-header-home">
               <h1>联想记忆卡片</h1>
-              <p className="app-subtitle">图谱联想 · 间隔复习 · 智能掌握</p>
             </Link>
             <nav className="app-nav">
               <NavLink
@@ -70,20 +69,20 @@ export const App: React.FC = () => {
                 卡组
               </NavLink>
               <NavLink
-                to="/stats"
-                className={({ isActive }) =>
-                  `app-nav-link ${isActive ? 'active' : ''}`
-                }
-              >
-                统计
-              </NavLink>
-              <NavLink
                 to="/assoc"
                 className={({ isActive }) =>
                   `app-nav-link ${isActive ? 'active' : ''}`
                 }
               >
                 联想
+              </NavLink>
+              <NavLink
+                to="/stats"
+                className={({ isActive }) =>
+                  `app-nav-link ${isActive ? 'active' : ''}`
+                }
+              >
+                统计
               </NavLink>
               <NavLink
                 to="/lab"

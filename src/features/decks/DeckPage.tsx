@@ -3,6 +3,36 @@ import type { Card } from '../../domain/models';
 import { useFlashcardApp } from './useFlashcardApp';
 import { deleteAssocProjectsByDeckId } from '../../domain/assocProjectStorage';
 
+const LONG_URL_THRESHOLD = 80;
+
+function hash8Base36(input: string): string {
+  let h = 0;
+  for (let i = 0; i < input.length; i++) {
+    h = (h * 31 + input.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(36).padStart(8, '0').slice(-8);
+}
+
+function foldLongImageUrlsInText(text: string): string {
+  const foldMd = (match: string, alt: string, url: string) => {
+    if (url.length <= LONG_URL_THRESHOLD) return match;
+    const key = `img-${hash8Base36(url)}`;
+    return `![${alt}](${key})`;
+  };
+  const foldHtml = (match: string, attrs: string, src: string) => {
+    if (src.length <= LONG_URL_THRESHOLD) return match;
+    const altMatch = attrs.match(/alt=["']([^"']*)["']/i);
+    const alt = altMatch?.[1] ?? '';
+    const key = `img-${hash8Base36(src)}`;
+    return `![${alt}](${key})`;
+  };
+
+  let result = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, foldMd);
+  result = result.replace(/<img\b([^>]*?)src="([^"]*)"[^>]*>/gi, foldHtml);
+  result = result.replace(/<img\b([^>]*?)src='([^']*)'[^>]*>/gi, foldHtml);
+  return result;
+}
+
 interface CardDraft {
   id?: string;
   front: string;
@@ -126,7 +156,8 @@ export const DeckPage: React.FC = () => {
   };
 
   const handleDeleteCard = (card: Card) => {
-    if (!window.confirm(`确定删除该卡片？\n\n${card.front}`)) return;
+    const folded = foldLongImageUrlsInText(card.front);
+    if (!window.confirm(`确定删除该卡片？\n\n${folded}`)) return;
     deleteCard(card.id);
   };
 

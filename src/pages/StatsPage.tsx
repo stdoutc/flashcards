@@ -100,7 +100,7 @@ export const StatsPage: React.FC = () => {
   /* ── 综合 KPI ── */
   const kpi = useMemo(() => {
     const totalCards = state.cards.length;
-    const masteredCards = state.cards.filter((c) => c.mastery >= 3).length;
+    const masteredCards = state.cards.filter((c) => c.mastery >= 4).length;
     const masteryPct =
       totalCards > 0 ? Math.round((masteredCards / totalCards) * 100) : 0;
     const streak = computeStreak(state.reviewLogs);
@@ -130,9 +130,9 @@ export const StatsPage: React.FC = () => {
     todayCardIds.forEach((id) => {
       if (!prevCardIds.has(id)) newCards++;
     });
-    // 今日触碰到的卡片中，当前掌握度 >= 3 的数量
+    // 今日触碰到的卡片中，当前掌握度 >= 4 的数量
     const masteredToday = state.cards.filter(
-      (c) => todayCardIds.has(c.id) && c.mastery >= 3,
+      (c) => todayCardIds.has(c.id) && c.mastery >= 4,
     ).length;
     return {
       count: todayLogs.length,
@@ -178,7 +178,7 @@ export const StatsPage: React.FC = () => {
     const now = Date.now();
     return state.decks.map((deck) => {
       const cards = state.cards.filter((c) => c.deckId === deck.id);
-      const mastered = cards.filter((c) => c.mastery >= 3).length;
+      const mastered = cards.filter((c) => c.mastery >= 4).length;
       const newCards = cards.filter((c) => c.lastReviewAt === null).length;
       const due = cards.filter(
         (c) => c.lastReviewAt !== null && (c.nextReview ?? 0) <= now,

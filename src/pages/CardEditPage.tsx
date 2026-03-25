@@ -42,6 +42,8 @@ interface CardEditorProps {
   onChange: (draft: CardDraft) => void;
   onSave: () => void;
   onCancel: () => void;
+  // 当编辑器折叠显示内容（省略长图片链接）时，用于“删除提示”展示同一份省略编码
+  onFoldedContentChange?: (id: string, foldedFront: string, foldedBack: string) => void;
 }
 
 // 长 URL 折叠阈值（超过此长度用占位符代替）
@@ -49,29 +51,97 @@ const LONG_URL_THRESHOLD = 80;
 // 正则：匹配折叠占位符 img-xxxxxxxx
 const IMG_REF_RE = /img-[a-z0-9]{8}/g;
 
-const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCancel }) => {
+function hash8Base36(input: string): string {
+  // 生成稳定的 8 位 a-z0-9（确保占位符形如 img-xxxxxxxx）
+  let h = 0;
+  for (let i = 0; i < input.length; i++) {
+    h = (h * 31 + input.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(36).padStart(8, '0').slice(-8);
+}
+
+function foldLongImageUrlsInText(text: string): string {
+  const foldMd = (match: string, alt: string, url: string) => {
+    if (url.length <= LONG_URL_THRESHOLD) return match;
+    const key = `img-${hash8Base36(url)}`;
+    return `![${alt}](${key})`;
+  };
+  const foldHtml = (match: string, attrs: string, src: string) => {
+    if (src.length <= LONG_URL_THRESHOLD) return match;
+    const altMatch = attrs.match(/alt=["']([^"']*)["']/i);
+    const alt = altMatch?.[1] ?? '';
+    const key = `img-${hash8Base36(src)}`;
+    return `![${alt}](${key})`;
+  };
+
+  // Markdown 图片：![alt](url)
+  let result = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, foldMd);
+  // HTML 图片：<img ... src="...">
+  result = result.replace(/<img\b([^>]*?)src="([^"]*)"[^>]*>/gi, foldHtml);
+  result = result.replace(/<img\b([^>]*?)src='([^']*)'[^>]*>/gi, foldHtml);
+  return result;
+}
+
+const CardEditor: React.FC<CardEditorProps> = ({
+  draft,
+  onChange,
+  onSave,
+  onCancel,
+  onFoldedContentChange,
+}) => {
   const [previewOpen, setPreviewOpen] = useState(true);
   const [activeField, setActiveField] = useState<'front' | 'back'>('front');
 
   // 图片链接插入状态
   const [imgPickerOpen, setImgPickerOpen] = useState(false);
-  const [imgUrl, setImgUrl] = useState('');
+  const [imgInsertMode, setImgInsertMode] = useState<'link' | 'local'>('link');
+  const [imgLinkUrl, setImgLinkUrl] = useState('');
+  const [imgLocalDataUrl, setImgLocalDataUrl] = useState('');
   const [imgAlt, setImgAlt] = useState('');
   const imgUrlRef = useRef<HTMLInputElement>(null);
   const imgFileRef = useRef<HTMLInputElement>(null);
+  const [imgDropHover, setImgDropHover] = useState(false);
 
-  // 读取本地图片为 base64，填入 URL 输入框（长 URL 在插入时自动折叠）
+  const handleLocalFileByFile = useCallback((file: File) => {
+    setImgInsertMode('local');
+    setImgLinkUrl('');
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImgLocalDataUrl(reader.result as string);
+      // 图片描述两种方式共用：只有为空时才自动带入文件名
+      const derivedAlt = file.name.replace(/\.[^.]+$/, '');
+      setImgAlt((prev) => (prev ? prev : derivedAlt));
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  // 读取本地图片为 base64，并填入 URL 输入框（长 URL 在插入时自动折叠）
   const handleLocalFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImgUrl(reader.result as string);
-      if (!imgAlt) setImgAlt(file.name.replace(/\.[^.]+$/, ''));
-    };
-    reader.readAsDataURL(file);
+    setImgLocalDataUrl('');
+    handleLocalFileByFile(file);
   };
+
+  // 支持 Ctrl+V / Cmd+V 粘贴图片（仅在“插入图片”面板打开时启用）
+  useEffect(() => {
+    if (!imgPickerOpen) return;
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (!item.type.startsWith('image/')) continue;
+        const file = item.getAsFile();
+        if (!file) continue;
+        e.preventDefault();
+        handleLocalFileByFile(file);
+        break;
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [imgPickerOpen, handleLocalFileByFile]);
 
   // 长 URL 折叠缓存：ref（不需要触发渲染）
   const localImagesRef = useRef<Record<string, string>>({});
@@ -85,9 +155,8 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
 
   // 为长字符串生成/复用折叠 key
   const getOrCreateKey = useCallback((longVal: string): string => {
-    const existing = Object.entries(localImagesRef.current).find(([, v]) => v === longVal);
-    const key = existing?.[0] ?? `img-${Math.random().toString(36).slice(2, 10)}`;
-    if (!existing) localImagesRef.current[key] = longVal;
+    const key = `img-${hash8Base36(longVal)}`;
+    if (!localImagesRef.current[key]) localImagesRef.current[key] = longVal;
     return key;
   }, []);
 
@@ -128,6 +197,12 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
     });
   }, [draftId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 将“编辑器当前显示（省略后）”的内容同步给父组件，用于删除提示保持完全相同编码
+  useEffect(() => {
+    if (!draft.id || !onFoldedContentChange) return;
+    onFoldedContentChange(draft.id, displayDraft.front, displayDraft.back);
+  }, [draft.id, onFoldedContentChange, displayDraft.front, displayDraft.back]);
+
   // textarea 普通编辑：同步展示草稿，并把展开后的内容同步给父组件
   const handleFieldChange = useCallback((field: 'front' | 'back', value: string) => {
     setDisplayDraft((prev) => ({ ...prev, [field]: value }));
@@ -152,13 +227,16 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
 
   const openImgPicker = () => {
     setImgPickerOpen(true);
-    setImgUrl('');
+    setImgInsertMode('link');
+    setImgLinkUrl('');
+    setImgLocalDataUrl('');
     setImgAlt('');
+    setImgDropHover(false);
     setTimeout(() => imgUrlRef.current?.focus(), 50);
   };
 
   const handleInsertImageUrl = () => {
-    const url = imgUrl.trim();
+    const url = (imgInsertMode === 'link' ? imgLinkUrl : imgLocalDataUrl).trim();
     if (!url) return;
     const alt = imgAlt.trim() || 'image';
 
@@ -204,200 +282,258 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
     : [];
 
   return (
-    <>
-      {/* Markdown 工具栏 */}
-      <div className="md-toolbar">
-        {(['front', 'back'] as const).map((f) => (
-          <button
-            key={f}
-            type="button"
-            className={`button button-ghost md-toolbar-tab ${activeField === f ? 'active' : ''}`}
-            onClick={() => setActiveField(f)}
-          >
-            {f === 'front' ? '正面' : '反面'}
-          </button>
-        ))}
-        <span className="toolbar-spacer" />
-        <button type="button" className="button button-ghost md-tool" title="粗体"
-          onClick={() => handleToolbar(activeField, '**', '**', '粗体文本')}>B</button>
-        <button type="button" className="button button-ghost md-tool" title="斜体"
-          onClick={() => handleToolbar(activeField, '*', '*', '斜体文本')}><i>I</i></button>
-        <button type="button" className="button button-ghost md-tool" title="行内代码"
-          onClick={() => handleToolbar(activeField, '`', '`', 'code')}>`</button>
-        <button type="button" className="button button-ghost md-tool" title="代码块"
-          onClick={() => handleToolbar(activeField, '```\n', '\n```', '代码')}>{ }</button>
-        <button type="button" className="button button-ghost md-tool" title="行内公式 $...$"
-          onClick={() => handleToolbar(activeField, '$', '$', 'x^2')}>𝑓</button>
-        <button type="button" className="button button-ghost md-tool" title="块级公式 $$...$$"
-          onClick={() => handleToolbar(activeField, '$$\n', '\n$$', '\\int_0^\\infty')}>Σ</button>
-        <span className="toolbar-divider" />
-        <button
-          type="button"
-          className={`button button-ghost md-tool${imgPickerOpen ? ' active' : ''}`}
-          title="插入图片链接"
-          onClick={() => imgPickerOpen ? setImgPickerOpen(false) : openImgPicker()}
-        >
-          🖼
-        </button>
-        <span className="toolbar-divider" />
-        <button
-          type="button"
-          className={`button button-ghost md-tool${previewOpen ? ' active' : ''}`}
-          title={previewOpen ? '隐藏预览' : '显示预览'}
-          onClick={() => setPreviewOpen((v) => !v)}
-        >
-          👁
-        </button>
-      </div>
-
-      {/* 隐藏的本地文件输入 */}
-      <input
-        ref={imgFileRef}
-        type="file"
-        accept="image/*"
-        style={{ display: 'none' }}
-        onChange={handleLocalFile}
-      />
-
-      {/* 图片链接输入面板 */}
-      {imgPickerOpen && (
-        <div className="img-size-picker">
-          <div className="img-size-picker-header">
-            <span className="img-size-picker-title">
-              插入图片到「{activeField === 'front' ? '正面' : '反面'}」
-            </span>
+    <div className="card-editor-modal-layout">
+      <div className="card-editor-modal-scroll">
+        {/* Markdown 工具栏 */}
+        <div className="md-toolbar">
+          {(['front', 'back'] as const).map((f) => (
             <button
+              key={f}
               type="button"
-              className="button button-ghost img-upload-btn"
-              onClick={() => imgFileRef.current?.click()}
+              className={`button button-ghost md-toolbar-tab ${activeField === f ? 'active' : ''}`}
+              onClick={() => setActiveField(f)}
             >
-              📂 上传本地图片
+              {f === 'front' ? '正面' : '反面'}
             </button>
-          </div>
-          <div className="img-size-picker-custom">
-            <span className="img-size-custom-label">图片 URL：</span>
-            <input
-              ref={imgUrlRef}
-              type="url"
-              className="input"
-              style={{ flex: 1, minWidth: 0 }}
-              placeholder="https://example.com/image.png"
-              value={imgUrl}
-              onChange={(e) => setImgUrl(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleInsertImageUrl()}
-            />
-          </div>
-          <div className="img-size-picker-custom">
-            <span className="img-size-custom-label">替代文字：</span>
-            <input
-              type="text"
-              className="input"
-              style={{ flex: 1, minWidth: 0 }}
-              placeholder="图片描述（可选）"
-              value={imgAlt}
-              onChange={(e) => setImgAlt(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleInsertImageUrl()}
-            />
-          </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button type="button" className="button button-ghost img-size-cancel"
-              onClick={() => setImgPickerOpen(false)}>取消</button>
-            <button type="button" className="button button-primary"
-              disabled={!imgUrl.trim()} onClick={handleInsertImageUrl}>插入</button>
-          </div>
-        </div>
-      )}
-
-      {/* 编辑 + 实时预览分屏 */}
-      <div className={`editor-split${previewOpen ? ' editor-split--with-preview' : ''}`}>
-
-        {/* 左：编辑区 */}
-        <div className="editor-split-main">
-          <div className="field">
-            <label className="label" htmlFor="modal-editor-front">
-              正面<span className="label-sub">单词 / 问题 / 提示</span>
-            </label>
-            <textarea
-              id="modal-editor-front"
-              className={`textarea editor-textarea ${activeField === 'front' ? 'active-field' : ''}`}
-              value={displayDraft.front}
-              onChange={(e) => handleFieldChange('front', e.target.value)}
-              onFocus={() => setActiveField('front')}
-              placeholder={"例如：什么是牛顿第二定律？\n\n支持 Markdown：**粗体** *斜体* `code`\n支持 LaTeX：$F=ma$"}
-              autoFocus
-            />
-          </div>
-
-          <div className="field">
-            <label className="label" htmlFor="modal-editor-back">
-              反面<span className="label-sub">解释 / 答案</span>
-            </label>
-            <textarea
-              id="modal-editor-back"
-              className={`textarea editor-textarea ${activeField === 'back' ? 'active-field' : ''}`}
-              value={displayDraft.back}
-              onChange={(e) => handleFieldChange('back', e.target.value)}
-              onFocus={() => setActiveField('back')}
-              placeholder={"$$F = ma$$\n\n其中 $F$ 为合力，$m$ 为质量，$a$ 为加速度。"}
-            />
-          </div>
-
-          <div className="field">
-            <label className="label" htmlFor="modal-editor-tags">
-              标签<span className="label-sub">逗号分隔</span>
-            </label>
-            <input
-              id="modal-editor-tags"
-              className="input"
-              value={displayDraft.tagsText}
-              onChange={(e) => { setDisplayDraft((p) => ({ ...p, tagsText: e.target.value })); onChange({ ...draft, tagsText: e.target.value }); }}
-              placeholder="物理, 力学, 重要"
-            />
-          </div>
-
-          {/* Markdown 语法速查（标签下方） */}
-          <div className="editor-cheatsheet-wrap">
-            <details className="md-cheatsheet">
-              <summary>Markdown / LaTeX 语法速查</summary>
-              <div className="md-cheatsheet-body">
-                <div className="cheat-row"><code>{'**粗体**'}</code><span>→ <strong>粗体</strong></span></div>
-                <div className="cheat-row"><code>{'*斜体*'}</code><span>→ <em>斜体</em></span></div>
-                <div className="cheat-row"><code>{'`行内代码`'}</code><span>→ 代码高亮</span></div>
-                <div className="cheat-row"><code>{'```语言 ... ```'}</code><span>→ 代码块</span></div>
-                <div className="cheat-row"><code>{'- item'}</code><span>→ 无序列表</span></div>
-                <div className="cheat-row"><code>{'1. item'}</code><span>→ 有序列表</span></div>
-                <div className="cheat-row"><code>{'$E=mc^2$'}</code><span>→ 行内公式</span></div>
-                <div className="cheat-row"><code>{'$$\\int_0^\\infty$$'}</code><span>→ 块级公式</span></div>
-                <div className="cheat-row"><code>{'\\frac{a}{b}'}</code><span>→ 分数</span></div>
-                <div className="cheat-row"><code>{'\\sqrt{x}'}</code><span>→ 根号</span></div>
-              </div>
-            </details>
-          </div>
+          ))}
+          <span className="toolbar-spacer" />
+          <button type="button" className="button button-ghost md-tool" title="粗体"
+            onClick={() => handleToolbar(activeField, '**', '**', '粗体文本')}>B</button>
+          <button type="button" className="button button-ghost md-tool" title="斜体"
+            onClick={() => handleToolbar(activeField, '*', '*', '斜体文本')}><i>I</i></button>
+          <button type="button" className="button button-ghost md-tool" title="行内代码"
+            onClick={() => handleToolbar(activeField, '`', '`', 'code')}>`</button>
+          <button type="button" className="button button-ghost md-tool" title="代码块"
+            onClick={() => handleToolbar(activeField, '```\n', '\n```', '代码')}>{'```'}</button>
+          <button type="button" className="button button-ghost md-tool" title="行内公式 $...$"
+            onClick={() => handleToolbar(activeField, '$', '$', 'x^2')}>𝑓</button>
+          <button type="button" className="button button-ghost md-tool" title="块级公式 $$...$$"
+            onClick={() => handleToolbar(activeField, '$$\n', '\n$$', '\\int_0^\\infty')}>Σ</button>
+          <span className="toolbar-divider" />
+          <button
+            type="button"
+            className={`button button-ghost md-tool${imgPickerOpen ? ' active' : ''}`}
+            title="插入图片"
+            onClick={() => imgPickerOpen ? setImgPickerOpen(false) : openImgPicker()}
+          >
+            插入图片
+          </button>
+          <span className="toolbar-divider" />
+          <button
+            type="button"
+            className={`button button-ghost md-tool${previewOpen ? ' active' : ''}`}
+            title={previewOpen ? '隐藏预览' : '显示预览'}
+            onClick={() => setPreviewOpen((v) => !v)}
+          >
+            👁
+          </button>
         </div>
 
-        {/* 右：实时预览 */}
-        {previewOpen && (
-          <div className="editor-split-preview">
-            <div className="editor-preview-label">实时预览</div>
-            <div className="preview-face-label">正面</div>
-            <div className="card-preview-face">
-              <CardRenderer content={draft.front || ''} />
-              {!draft.front && <span className="editor-preview-empty">（空）</span>}
+        {/* 隐藏的本地文件输入 */}
+        <input
+          ref={imgFileRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleLocalFile}
+        />
+
+        {/* 插入图片面板：链接 / 本地两种方式二选一 */}
+        {imgPickerOpen && (
+          <div className="img-size-picker">
+            <div className="img-size-picker-header">
+              <span className="img-size-picker-title">
+                插入图片到「{activeField === 'front' ? '正面' : '反面'}」
+              </span>
             </div>
-            <div className="preview-face-label" style={{ marginTop: 12 }}>反面</div>
-            <div className="card-preview-face">
-              <CardRenderer content={draft.back || ''} />
-              {!draft.back && <span className="editor-preview-empty">（空）</span>}
-            </div>
-            {tags.length > 0 && (
-              <div className="tag-list" style={{ marginTop: 10 }}>
-                {tags.map((t) => <span key={t} className="tag">{t}</span>)}
+
+            <div style={{ display: 'flex', gap: 12, marginTop: 10 }}>
+              {/* 左：图片链接 */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontWeight: 600 }}>图片 URL</span>
+                </div>
+
+                <div className="img-size-picker-custom">
+                  <span className="img-size-custom-label">图片 URL：</span>
+                  <input
+                    ref={imgUrlRef}
+                    type="url"
+                    className="input"
+                    style={{ flex: 1, minWidth: 0 }}
+                    placeholder="https://example.com/image.png"
+                    value={imgLinkUrl}
+                    onFocus={() => setImgInsertMode('link')}
+                    disabled={imgInsertMode !== 'link'}
+                    onChange={(e) => setImgLinkUrl(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleInsertImageUrl()}
+                  />
+                </div>
               </div>
-            )}
+
+              {/* 右：本地图片（支持拖拽） */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  className={`lab-dropzone${imgLocalDataUrl ? ' lab-dropzone--has-image' : ''}`}
+                  onClick={() => {
+                    setImgInsertMode('local');
+                    setImgDropHover(false);
+                    imgFileRef.current?.click();
+                  }}
+                  onDragEnter={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setImgDropHover(true);
+                    setImgInsertMode('local');
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setImgDropHover(true);
+                    setImgInsertMode('local');
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setImgDropHover(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setImgDropHover(false);
+                    setImgInsertMode('local');
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) handleLocalFileByFile(file);
+                  }}
+                >
+                  {imgLocalDataUrl ? (
+                    <img src={imgLocalDataUrl} alt="本地图片" className="lab-preview-img" />
+                  ) : (
+                    <div className="lab-dropzone-hint">
+                      <span className="lab-dropzone-icon">🖼️</span>
+                      <span>点击或拖拽图片到此处</span>
+                      <span className="lab-dropzone-sub">支持 JPG / PNG / WEBP，以及 Ctrl+V 粘贴图片</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 图片描述：链接 / 本地共用 */}
+            <div className="img-size-picker-custom" style={{ marginTop: 12 }}>
+              <span className="img-size-custom-label">替代文字：</span>
+              <input
+                type="text"
+                className="input"
+                style={{ flex: 1, minWidth: 0 }}
+                placeholder="图片描述（可选）"
+                value={imgAlt}
+                onChange={(e) => setImgAlt(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleInsertImageUrl()}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+              <button type="button" className="button button-ghost img-size-cancel"
+                onClick={() => { setImgPickerOpen(false); setImgDropHover(false); }}>取消</button>
+              <button type="button" className="button button-primary"
+                disabled={!((imgInsertMode === 'link' ? imgLinkUrl : imgLocalDataUrl).trim())} onClick={handleInsertImageUrl}>插入</button>
+            </div>
           </div>
         )}
+
+        {/* 编辑 + 实时预览分屏 */}
+        <div className={`editor-split${previewOpen ? ' editor-split--with-preview' : ''}`}>
+          {/* 左：编辑区 */}
+          <div className="editor-split-main">
+            <div className="field">
+              <label className="label" htmlFor="modal-editor-front">
+                正面<span className="label-sub">单词 / 问题 / 提示</span>
+              </label>
+              <textarea
+                id="modal-editor-front"
+                className={`textarea editor-textarea ${activeField === 'front' ? 'active-field' : ''}`}
+                value={displayDraft.front}
+                onChange={(e) => handleFieldChange('front', e.target.value)}
+                onFocus={() => setActiveField('front')}
+                placeholder={"例如：什么是牛顿第二定律？\n\n支持 Markdown：**粗体** *斜体* `code`\n支持 LaTeX：$F=ma$"}
+                autoFocus
+              />
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="modal-editor-back">
+                反面<span className="label-sub">解释 / 答案</span>
+              </label>
+              <textarea
+                id="modal-editor-back"
+                className={`textarea editor-textarea ${activeField === 'back' ? 'active-field' : ''}`}
+                value={displayDraft.back}
+                onChange={(e) => handleFieldChange('back', e.target.value)}
+                onFocus={() => setActiveField('back')}
+                placeholder={"$$F = ma$$\n\n其中 $F$ 为合力，$m$ 为质量，$a$ 为加速度。"}
+              />
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="modal-editor-tags">
+                标签<span className="label-sub">逗号分隔</span>
+              </label>
+              <input
+                id="modal-editor-tags"
+                className="input"
+                value={displayDraft.tagsText}
+                onChange={(e) => { setDisplayDraft((p) => ({ ...p, tagsText: e.target.value })); onChange({ ...draft, tagsText: e.target.value }); }}
+                placeholder="物理, 力学, 重要"
+              />
+            </div>
+
+            {/* Markdown 语法速查（标签下方） */}
+            <div className="editor-cheatsheet-wrap">
+              <details className="md-cheatsheet">
+                <summary>Markdown / LaTeX 语法速查</summary>
+                <div className="md-cheatsheet-body">
+                  <div className="cheat-row"><code>{'**粗体**'}</code><span>→ <strong>粗体</strong></span></div>
+                  <div className="cheat-row"><code>{'*斜体*'}</code><span>→ <em>斜体</em></span></div>
+                  <div className="cheat-row"><code>{'`行内代码`'}</code><span>→ 代码高亮</span></div>
+                  <div className="cheat-row"><code>{'```语言 ... ```'}</code><span>→ 代码块</span></div>
+                  <div className="cheat-row"><code>{'- item'}</code><span>→ 无序列表</span></div>
+                  <div className="cheat-row"><code>{'1. item'}</code><span>→ 有序列表</span></div>
+                  <div className="cheat-row"><code>{'$E=mc^2$'}</code><span>→ 行内公式</span></div>
+                  <div className="cheat-row"><code>{'$$\\int_0^\\infty$$'}</code><span>→ 块级公式</span></div>
+                  <div className="cheat-row"><code>{'\\frac{a}{b}'}</code><span>→ 分数</span></div>
+                  <div className="cheat-row"><code>{'\\sqrt{x}'}</code><span>→ 根号</span></div>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          {/* 右：实时预览 */}
+          {previewOpen && (
+            <div className="editor-split-preview">
+              <div className="editor-preview-label">实时预览</div>
+              <div className="preview-face-label">正面</div>
+              <div className="card-preview-face">
+                <CardRenderer content={draft.front || ''} />
+                {!draft.front && <span className="editor-preview-empty">（空）</span>}
+              </div>
+              <div className="preview-face-label" style={{ marginTop: 12 }}>反面</div>
+              <div className="card-preview-face">
+                <CardRenderer content={draft.back || ''} />
+                {!draft.back && <span className="editor-preview-empty">（空）</span>}
+              </div>
+              {tags.length > 0 && (
+                <div className="tag-list" style={{ marginTop: 10 }}>
+                  {tags.map((t) => <span key={t} className="tag">{t}</span>)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
       </div>
 
+      {/* 底部按钮：始终固定在右下角（不随滚动区域变化） */}
       <div className="editor-actions">
         <button type="button" className="button button-ghost" onClick={onCancel}>
           取消
@@ -411,8 +547,7 @@ const CardEditor: React.FC<CardEditorProps> = ({ draft, onChange, onSave, onCanc
           {draft.id ? '保存修改' : '添加卡片'}
         </button>
       </div>
-
-    </>
+    </div>
   );
 };
 
@@ -448,6 +583,8 @@ export const CardEditPage: React.FC = () => {
     [state.cards, deckId],
   );
 
+  const foldedContentByCardIdRef = useRef<Record<string, { front: string; back: string }>>({});
+
   const filteredCards = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return cardsOfDeck;
@@ -458,7 +595,7 @@ export const CardEditPage: React.FC = () => {
     });
   }, [cardsOfDeck, searchQuery]);
 
-  const masteredCount = cardsOfDeck.filter((c) => c.mastery >= 3).length;
+  const masteredCount = cardsOfDeck.filter((c) => c.mastery >= 4).length;
   const newCount = cardsOfDeck.filter((c) => (c.mastery ?? 0) === 0).length;
 
   // 打开新建窗口
@@ -512,7 +649,9 @@ export const CardEditPage: React.FC = () => {
   };
 
   const handleDeleteCard = (card: Card) => {
-    if (!window.confirm(`确定删除该卡片？\n\n${card.front}`)) return;
+    const cached = foldedContentByCardIdRef.current[card.id];
+    const folded = cached ? cached.front : foldLongImageUrlsInText(card.front);
+    if (!window.confirm(`确定删除该卡片？\n\n${folded}`)) return;
     deleteCard(card.id);
   };
 
@@ -735,6 +874,9 @@ export const CardEditPage: React.FC = () => {
           onChange={setCardDraft}
           onSave={handleSave}
           onCancel={handleCloseEditor}
+          onFoldedContentChange={(id, foldedFront, foldedBack) => {
+            foldedContentByCardIdRef.current[id] = { front: foldedFront, back: foldedBack };
+          }}
         />
       </Modal>
     </div>

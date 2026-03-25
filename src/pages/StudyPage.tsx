@@ -19,15 +19,15 @@ const LimitBar: React.FC<{
   limit: number;
   colorClass: string;
 }> = ({ label, done, limit, colorClass }) => {
-  const safeLimit = Math.max(0, limit);
+  const safeLimit = Math.max(0, limit, done);
   const pct = safeLimit > 0 ? Math.min(100, (done / safeLimit) * 100) : 0;
-  const reached = done >= limit;
+  const reached = done >= safeLimit;
   return (
     <div className="limit-bar-wrap">
       <div className="limit-bar-header">
         <span className="limit-bar-label">{label}</span>
         <span className={`limit-bar-count ${reached ? 'limit-reached' : ''}`}>
-          {done} / {limit}
+          {done} / {safeLimit}
         </span>
       </div>
       <div className="limit-bar-track">

@@ -18,6 +18,7 @@ export const HomePage: React.FC = () => {
     deleteDeck,
     exportDeckJson,
     importDeckJson,
+    getNow,
   } = useFlashcard();
 
   const [deckFilter, setDeckFilter] = useState('');
@@ -60,7 +61,7 @@ export const HomePage: React.FC = () => {
   );
 
   const deckStats = useMemo(() => {
-    const now = Date.now();
+    const now = getNow();
     const map: Record<string, { total: number; due: number; newCount: number }> = {};
     for (const deck of state.decks) {
       const cards = state.cards.filter((c) => c.deckId === deck.id);
@@ -76,7 +77,7 @@ export const HomePage: React.FC = () => {
       map[deck.id] = { total: cards.length, due, newCount };
     }
     return map;
-  }, [state.decks, state.cards]);
+  }, [state.decks, state.cards, getNow]);
 
   // ── 新建卡组 ──
   const handleCreateDeck = () => {

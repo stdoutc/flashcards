@@ -15,6 +15,8 @@ export const AssocHomePage: React.FC = () => {
   const navigate = useNavigate();
   const [refreshKey, setRefreshKey] = useState(0);
   const [deckFilter, setDeckFilter] = useState('');
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
 
   type ModalKind = 'create' | null;
   const [modal, setModal] = useState<ModalKind>(null);
@@ -49,6 +51,37 @@ export const AssocHomePage: React.FC = () => {
 
   const closeModal = () => setModal(null);
 
+  const toggleBulkMode = () => {
+    setBulkMode((v) => !v);
+    setSelectedProjectIds(new Set());
+  };
+
+  const toggleSelectProject = (projectId: string) => {
+    setSelectedProjectIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  };
+
+  const handleSelectAllProjects = () => {
+    if (selectedProjectIds.size === filteredProjects.length) {
+      setSelectedProjectIds(new Set());
+    } else {
+      setSelectedProjectIds(new Set(filteredProjects.map((p) => p.id)));
+    }
+  };
+
+  const handleBulkDeleteProjects = () => {
+    if (selectedProjectIds.size === 0) return;
+    if (!window.confirm(`确认删除选中的 ${selectedProjectIds.size} 个联想图谱吗？此操作不可撤销。`)) return;
+    Array.from(selectedProjectIds).forEach((id) => deleteAssocProject(id));
+    setSelectedProjectIds(new Set());
+    setBulkMode(false);
+    setRefreshKey((k) => k + 1);
+  };
+
   const handleCreate = () => {
     if (!newDeckId) return;
     const p = createAssocProject(newName, newDeckId);
@@ -76,12 +109,53 @@ export const AssocHomePage: React.FC = () => {
           <button type="button" className="button button-primary" onClick={() => setModal('create')}>
             ＋ 新建联想图谱
           </button>
+          <button
+            type="button"
+            className={`button button-ghost home-bulk-btn ${bulkMode ? 'active' : ''}`}
+            onClick={toggleBulkMode}
+          >
+            {bulkMode ? '取消批量' : '批量删除'}
+          </button>
         </div>
       </div>
 
+      {bulkMode && (
+        <div className="home-bulk-toolbar card-surface">
+          <button type="button" className="button button-ghost" onClick={handleSelectAllProjects}>
+            {selectedProjectIds.size === filteredProjects.length && filteredProjects.length > 0
+              ? '取消全选'
+              : `全选 (${filteredProjects.length})`}
+          </button>
+          <span className="home-bulk-count">已选 {selectedProjectIds.size} 个图谱</span>
+          <button
+            type="button"
+            className="button button-danger"
+            disabled={selectedProjectIds.size === 0}
+            onClick={handleBulkDeleteProjects}
+          >
+            删除所选
+          </button>
+        </div>
+      )}
+
       <div className="deck-grid">
-        {filteredProjects.map((p) => (
-          <div key={p.id} className="deck-card">
+        {filteredProjects.map((p) => {
+          const isChecked = selectedProjectIds.has(p.id);
+          return (
+          <div
+            key={p.id}
+            className={`deck-card ${bulkMode && isChecked ? 'deck-card-bulk-selected' : ''}`}
+            onClick={() => (bulkMode ? toggleSelectProject(p.id) : undefined)}
+          >
+            {bulkMode && (
+              <label className="deck-card-checkbox" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() => toggleSelectProject(p.id)}
+                />
+              </label>
+            )}
             <div className="deck-card-body">
               <div className="deck-card-name">{p.name}</div>
               <div className="deck-card-chips">
@@ -90,51 +164,53 @@ export const AssocHomePage: React.FC = () => {
                 </span>
               </div>
             </div>
-            <div className="deck-card-actions">
-              <Link to={`/assoc/${p.id}`} className="button button-primary deck-card-cta">
-                打开编辑
-              </Link>
-              <button
-                type="button"
-                className="button button-primary"
-                onClick={() => {
-                  if (!p.graph.rootId) {
-                    window.alert('该图谱尚未设置起始节点，请先进入编辑页添加首张卡片。');
-                    return;
-                  }
-                  // 有些浏览器在成功打开新标签页时仍可能返回 null，
-                  // 为避免出现「已打开但还弹失败提示」的体验问题，这里不依赖返回值。
-                  openAssocRecallWindow(p.deckId, p.graph.rootId, p.graph.children ?? {});
-                }}
-              >
-                开始联想
-              </button>
-              <button
-                type="button"
-                className="button button-ghost"
-                onClick={() => {
-                  const next = window.prompt('重命名联想图谱', p.name)?.trim();
-                  if (!next) return;
-                  updateAssocProjectMeta(p.id, { name: next });
-                  setRefreshKey((k) => k + 1);
-                }}
-              >
-                重命名
-              </button>
-              <button
-                type="button"
-                className="button button-ghost"
-                onClick={() => {
-                  if (!window.confirm(`确认删除联想图谱「${p.name}」吗？`)) return;
-                  deleteAssocProject(p.id);
-                  setRefreshKey((k) => k + 1);
-                }}
-              >
-                删除
-              </button>
-            </div>
+            {!bulkMode && (
+              <div className="deck-card-actions">
+                <Link to={`/assoc/${p.id}`} className="button button-primary deck-card-cta">
+                  打开编辑
+                </Link>
+                <button
+                  type="button"
+                  className="button button-primary"
+                  onClick={() => {
+                    if (!p.graph.rootId) {
+                      window.alert('该图谱尚未设置起始节点，请先进入编辑页添加首张卡片。');
+                      return;
+                    }
+                    // 有些浏览器在成功打开新标签页时仍可能返回 null，
+                    // 为避免出现「已打开但还弹失败提示」的体验问题，这里不依赖返回值。
+                    openAssocRecallWindow(p.deckId, p.graph.rootId, p.graph.children ?? {});
+                  }}
+                >
+                  开始联想
+                </button>
+                <button
+                  type="button"
+                  className="button button-ghost"
+                  onClick={() => {
+                    const next = window.prompt('重命名联想图谱', p.name)?.trim();
+                    if (!next) return;
+                    updateAssocProjectMeta(p.id, { name: next });
+                    setRefreshKey((k) => k + 1);
+                  }}
+                >
+                  重命名
+                </button>
+                <button
+                  type="button"
+                  className="button button-ghost"
+                  onClick={() => {
+                    if (!window.confirm(`确认删除联想图谱「${p.name}」吗？`)) return;
+                    deleteAssocProject(p.id);
+                    setRefreshKey((k) => k + 1);
+                  }}
+                >
+                  删除
+                </button>
+              </div>
+            )}
           </div>
-        ))}
+        )})}
       </div>
 
       {filteredProjects.length === 0 && (

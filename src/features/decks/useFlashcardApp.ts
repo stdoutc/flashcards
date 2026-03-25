@@ -139,12 +139,27 @@ export function useFlashcardApp(): AppViewModel {
     // 额外学习（“再学 n 张”）期间，把上限也临时扩展同样的额度，
     // 但只对“当天的当前卡组”生效。
     const extraLimit = isPracticeActiveForSelectedDeck && practiceSession ? practiceSession.target : 0;
+    const configuredNewLimit = selectedDeck.newPerDay + extraLimit;
+    const currentNewCards = selectedDeckCards.filter((c) => c.lastReviewAt === null).length;
+    // 新卡分母应以“当前新卡池总量（已学新卡 + 未学新卡）”计算，避免学习过程中分母波动
+    const totalNewPool = newToday + currentNewCards;
+    const clampedByCardCount = Math.min(totalNewPool, configuredNewLimit);
     return {
       newToday,
       reviewToday,
-      newLimit: selectedDeck.newPerDay + extraLimit,
+      // 每日新卡分母：当前卡片数量与新卡上限取最小值；并兜底不小于分子
+      newLimit: Math.max(clampedByCardCount, newToday),
     };
-  }, [selectedDeckId, selectedDeck, state.reviewLogs, practiceSession, isPracticeActiveForSelectedDeck, mockOffset, getNow]);
+  }, [
+    selectedDeckId,
+    selectedDeck,
+    selectedDeckCards,
+    state.reviewLogs,
+    practiceSession,
+    isPracticeActiveForSelectedDeck,
+    mockOffset,
+    getNow,
+  ]);
 
   const updateState = (updater: (prev: FlashcardState) => FlashcardState) => {
     setState((prev) => updater(prev));
