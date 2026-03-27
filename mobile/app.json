@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "Flashcard Mobile",
+    "slug": "flashcard-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}

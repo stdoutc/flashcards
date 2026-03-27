@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { FlashcardProvider } from './context/FlashcardContext';
 import { HomePage } from './pages/HomePage';
 import { CardEditPage } from './pages/CardEditPage';
@@ -43,14 +43,19 @@ const AppMain: React.FC = () => {
         <Route path="/lab/assoc" element={<Navigate to="/assoc" replace />} />
         <Route path="/lab/assoc/recall" element={<Navigate to="/assoc/recall" replace />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </main>
   );
 };
 
 export const App: React.FC = () => {
+  const useHashRouter =
+    typeof window !== 'undefined' && window.location.protocol === 'file:';
+  const Router = useHashRouter ? HashRouter : BrowserRouter;
+
   return (
-    <BrowserRouter>
+    <Router>
       <FlashcardProvider>
         <div className={`app-root ${IS_DEBUG ? 'app-root--debug' : ''}`}>
           {IS_DEBUG && <div className="dbg-banner">🐛 调试模式</div>}
@@ -106,6 +111,6 @@ export const App: React.FC = () => {
           {IS_DEBUG && <DebugPanel />}
         </div>
       </FlashcardProvider>
-    </BrowserRouter>
+    </Router>
   );
 };
