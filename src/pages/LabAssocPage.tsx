@@ -277,6 +277,30 @@ export const LabAssocPage: React.FC = () => {
     setChildrenMap((prev) => removeChildSubtree(prev, parentId, childId));
   };
 
+  /** 删除当前 focus 节点的子树（focus 可能不等于全局 rootId） */
+  const removeFocusSubtree = useCallback(() => {
+    if (!focusId || !rootId) return;
+    // 如果 focus 就是全局 root，删除它的子树等价于清空整张图。
+    if (focusId === rootId) {
+      clearAll();
+      return;
+    }
+
+    // childrenMap 只有“父 -> 子”，因此需要反查 focusId 的父节点。
+    const parentEntry = Object.entries(childrenMap).find(([, arr]) => (arr ?? []).includes(focusId));
+    const parentId = parentEntry?.[0];
+    if (!parentId) {
+      // 理论上不会发生（图结构被设计为树），但做兜底避免卡死。
+      clearAll();
+      return;
+    }
+
+    setChildrenMap((prev) => removeChildSubtree(prev, parentId, focusId));
+    // focus 节点已被删掉，保持界面可用：把 focus 切回它的父节点。
+    setFocusId(parentId);
+    showFeedback('已删除当前起始节点子树');
+  }, [childrenMap, focusId, rootId, showFeedback]);
+
   const startReplaceNode = useCallback(
     (nodeId: string) => {
       if (!treeNodes.has(nodeId)) return;
@@ -833,7 +857,7 @@ export const LabAssocPage: React.FC = () => {
                         type="button"
                         className="button button-ghost button-sm"
                         onClick={() => {
-                          clearAll();
+                          removeFocusSubtree();
                         }}
                       >
                         删除
