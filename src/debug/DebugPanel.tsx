@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useFlashcard } from '../context/FlashcardContext';
 
 const DAY = 24 * 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
 
 function fmtTs(ts: number): string {
   return new Date(ts).toLocaleString('zh-CN', {
@@ -28,6 +29,7 @@ export const DebugPanel: React.FC = () => {
 
   const [open, setOpen] = useState(false);
   const [customDays, setCustomDays] = useState('1');
+  const [customMinutes, setCustomMinutes] = useState('30');
   const [jumpDate, setJumpDate] = useState('');
   const [showRaw, setShowRaw] = useState(false);
   const [opMsg, setOpMsg] = useState<string | null>(null);
@@ -45,11 +47,23 @@ export const DebugPanel: React.FC = () => {
     flash(`时间已${days > 0 ? '前进' : '后退'} ${Math.abs(days)} 天`);
   }
 
+  function shiftMinutes(minutes: number) {
+    setMockOffset(mockOffset + minutes * MINUTE);
+    flash(`时间已${minutes > 0 ? '前进' : '后退'} ${Math.abs(minutes)} 分钟`);
+  }
+
   function handleCustomShift() {
     const d = parseFloat(customDays);
     if (isNaN(d)) return;
     setMockOffset(mockOffset + d * DAY);
     flash(`时间已偏移 ${d} 天`);
+  }
+
+  function handleCustomMinuteShift() {
+    const minutes = parseFloat(customMinutes);
+    if (isNaN(minutes) || minutes === 0) return;
+    setMockOffset(mockOffset + minutes * MINUTE);
+    flash(`时间已偏移 ${minutes} 分钟`);
   }
 
   function handleJumpDate() {
@@ -140,6 +154,13 @@ export const DebugPanel: React.FC = () => {
               <button className="dbg-btn dbg-btn-primary" onClick={() => shiftDays(30)}>+30天</button>
             </div>
 
+            <div className="dbg-btn-row">
+              <button className="dbg-btn dbg-btn-sm" onClick={() => shiftMinutes(-10)}>−10分</button>
+              <button className="dbg-btn dbg-btn-primary" onClick={() => shiftMinutes(10)}>+10分</button>
+              <button className="dbg-btn dbg-btn-primary" onClick={() => shiftMinutes(30)}>+30分</button>
+              <button className="dbg-btn dbg-btn-primary" onClick={() => shiftMinutes(60)}>+60分</button>
+            </div>
+
             <div className="dbg-input-row">
               <label className="dbg-label">自定义天数</label>
               <input
@@ -151,6 +172,20 @@ export const DebugPanel: React.FC = () => {
               />
               <button className="dbg-btn dbg-btn-primary" onClick={handleCustomShift}>
                 前进
+              </button>
+            </div>
+
+            <div className="dbg-input-row">
+              <label className="dbg-label">自定义分钟</label>
+              <input
+                type="number"
+                className="dbg-input"
+                value={customMinutes}
+                onChange={(e) => setCustomMinutes(e.target.value)}
+                step="1"
+              />
+              <button className="dbg-btn dbg-btn-primary" onClick={handleCustomMinuteShift}>
+                跳跃
               </button>
             </div>
 

@@ -13,9 +13,11 @@ import { LabAssocRecallPage } from './pages/LabAssocRecallPage';
 import { AssocHomePage } from './pages/AssocHomePage';
 import { IS_DEBUG } from './features/decks/useFlashcardApp';
 import { DebugPanel } from './debug/DebugPanel';
+import { isFlashcardMobileShell } from './utils/mobileShell';
 
 /** 联想模式页占满主区域宽度与高度（需在 Router 内） */
 const AppMain: React.FC = () => {
+  const hideAssoc = isFlashcardMobileShell();
   const { pathname } = useLocation();
   const assocRecallFull =
     pathname === '/assoc/recall' ||
@@ -37,11 +39,26 @@ const AppMain: React.FC = () => {
         <Route path="/stats" element={<StatsPage />} />
         <Route path="/lab" element={<LabHomePage />} />
         <Route path="/lab/ai" element={<LabPage />} />
-        <Route path="/assoc" element={<AssocHomePage />} />
-        <Route path="/assoc/:projectId" element={<LabAssocPage />} />
-        <Route path="/assoc/recall" element={<LabAssocRecallPage />} />
-        <Route path="/lab/assoc" element={<Navigate to="/assoc" replace />} />
-        <Route path="/lab/assoc/recall" element={<Navigate to="/assoc/recall" replace />} />
+        <Route
+          path="/assoc"
+          element={hideAssoc ? <Navigate to="/" replace /> : <AssocHomePage />}
+        />
+        <Route
+          path="/assoc/:projectId"
+          element={hideAssoc ? <Navigate to="/" replace /> : <LabAssocPage />}
+        />
+        <Route
+          path="/assoc/recall"
+          element={hideAssoc ? <Navigate to="/" replace /> : <LabAssocRecallPage />}
+        />
+        <Route
+          path="/lab/assoc"
+          element={<Navigate to={hideAssoc ? '/' : '/assoc'} replace />}
+        />
+        <Route
+          path="/lab/assoc/recall"
+          element={<Navigate to={hideAssoc ? '/' : '/assoc/recall'} replace />}
+        />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
@@ -53,6 +70,7 @@ export const App: React.FC = () => {
   const useHashRouter =
     typeof window !== 'undefined' && window.location.protocol === 'file:';
   const Router = useHashRouter ? HashRouter : BrowserRouter;
+  const hideAssocNav = isFlashcardMobileShell();
 
   return (
     <Router>
@@ -73,14 +91,16 @@ export const App: React.FC = () => {
               >
                 卡组
               </NavLink>
-              <NavLink
-                to="/assoc"
-                className={({ isActive }) =>
-                  `app-nav-link ${isActive ? 'active' : ''}`
-                }
-              >
-                联想
-              </NavLink>
+              {!hideAssocNav && (
+                <NavLink
+                  to="/assoc"
+                  className={({ isActive }) =>
+                    `app-nav-link ${isActive ? 'active' : ''}`
+                  }
+                >
+                  联想
+                </NavLink>
+              )}
               <NavLink
                 to="/stats"
                 className={({ isActive }) =>

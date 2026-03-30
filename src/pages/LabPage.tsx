@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { CardRenderer, normalizeLatexDelimiters } from '../components/CardRenderer';
 import { useFlashcard } from '../context/FlashcardContext';
+import { shrinkImageDataUrl } from '../utils/shrinkImageDataUrl';
 
 // ── 类型 ─────────────────────────────────────────────────────────────────────
 interface DraftCard {
@@ -9,7 +11,7 @@ interface DraftCard {
   back: string;
 }
 
-type Phase = 'upload' | 'loading' | 'review' | 'done';
+type Phase = 'upload' | 'loading' | 'review';
 type PromptMode = 'fast' | 'accurate';
 
 // ── 豆包 API 调用 ────────────────────────────────────────────────────────────
@@ -39,7 +41,7 @@ B. 若是“知识点类”：
 
 【通用要求】
 - 仅输出高质量学习卡，去除无关噪音（页码、水印、装饰）
-- 术语、符号、公式尽量保持原意；公式可用 LaTeX
+- 术语、符号、公式尽量保持原意；公式须以 KaTeX 可解析的 LaTeX 编写（本应用使用 KaTeX 渲染）
 - 每张卡包含：
   - front：正面提问，简洁精准（一句话优先）
   - back：背面答案，可包含解释、公式、要点列表（支持 Markdown）
@@ -60,6 +62,7 @@ const FAST_PROMPT = `你是一位专业的教育助手。请先判断图片内�
 每张闪卡包含：
 - front：正面提问，简洁精准（一句话）
 - back：背面答案，可包含解释、公式、要点列表（支持 Markdown）
+- 公式须以 KaTeX 可解析的 LaTeX 编写（本应用使用 KaTeX 渲染）
 
 请直接以 JSON 数组输出，格式如下（不要有任何多余文字）：
 [
@@ -114,20 +117,87 @@ async function callDoubaoVision(
     jsonStr = jsonStr.slice(arrStart, arrEnd + 1);
   }
 
-  // 修复 JSON 字符串值中的非法转义（如 LaTeX \frac \sum \\ 等）
-  // 只处理字符串值内部的反斜杠，保留合法的 JSON 转义序列
-  const fixEscapes = (s: string): string =>
-    s.replace(/"((?:[^"\\]|\\[\s\S])*?)"/g, (_, inner: string) => {
-      const fixed = inner.replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
-      return `"${fixed}"`;
-    });
+  // 在字符串内部修复常见非法 JSON 内容：
+  // 1) LaTeX 等导致的非法反斜杠转义（\frac / \( / \sum）
+  // 2) 原始换行、回车、制表符等控制字符
+  const sanitizeJsonStringContent = (s: string): string => {
+    let out = '';
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < s.length; i += 1) {
+      const ch = s[i];
+
+      if (!inString) {
+        out += ch;
+        if (ch === '"') inString = true;
+        continue;
+      }
+
+      if (escaped) {
+        const isUnicodeStart = ch === 'u';
+        const isSimpleValidEscape = /["\\/]/.test(ch);
+        const isControlEscape = /[bfnrt]/.test(ch);
+        const next = s[i + 1] ?? '';
+        // \begin \frac \theta \neq 等 LaTeX 指令会以 b/f/t/n/r 开头，需保留反斜杠
+        const looksLikeLatexCommand = isControlEscape && /[a-zA-Z]/.test(next);
+        const isValidEscape = isSimpleValidEscape || isUnicodeStart || (isControlEscape && !looksLikeLatexCommand);
+
+        if (isValidEscape) {
+          out += ch;
+        } else {
+          // 前一个反斜杠是非法转义起点，把它转义成普通字符
+          out += `\\${ch}`;
+        }
+        escaped = false;
+        continue;
+      }
+
+      if (ch === '\\') {
+        out += ch;
+        escaped = true;
+        continue;
+      }
+
+      if (ch === '"') {
+        out += ch;
+        inString = false;
+        continue;
+      }
+
+      if (ch === '\n') {
+        out += '\\n';
+        continue;
+      }
+      if (ch === '\r') {
+        out += '\\r';
+        continue;
+      }
+      if (ch === '\t') {
+        out += '\\t';
+        continue;
+      }
+
+      const code = ch.charCodeAt(0);
+      if (code < 0x20) {
+        out += `\\u${code.toString(16).padStart(4, '0')}`;
+        continue;
+      }
+
+      out += ch;
+    }
+
+    // 末尾孤立反斜杠，补一个反斜杠避免 JSON 崩溃
+    if (escaped) out += '\\';
+    return out;
+  };
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonStr);
   } catch {
     try {
-      parsed = JSON.parse(fixEscapes(jsonStr));
+      parsed = JSON.parse(sanitizeJsonStringContent(jsonStr));
     } catch (e2) {
       throw new Error(`AI 返回内容无法解析为 JSON，请重试。\n原始内容：${jsonStr.slice(0, 200)}`);
     }
@@ -151,51 +221,98 @@ async function callDoubaoVision(
 const DraftCardItem: React.FC<{
   card: DraftCard;
   index: number;
+  batchSelect: boolean;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
   onChange: (id: string, field: 'front' | 'back', value: string) => void;
-  onRemove: (id: string) => void;
-}> = ({ card, index, onChange, onRemove }) => {
+}> = ({ card, index, batchSelect, selected, onToggleSelect, onChange }) => {
+  const [editing, setEditing] = useState(false);
+  const frontTaRef = useRef<HTMLTextAreaElement>(null);
+  const backTaRef = useRef<HTMLTextAreaElement>(null);
+
   const autoGrow = (el: HTMLTextAreaElement | null) => {
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
   };
 
+  useEffect(() => {
+    if (!editing) return;
+    const id = requestAnimationFrame(() => {
+      autoGrow(frontTaRef.current);
+      autoGrow(backTaRef.current);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [editing]);
+
   return (
     <div className="lab-card">
       <div className="lab-card-header">
+        {batchSelect && (
+          <label className="lab-card-select-hit">
+            <input
+              type="checkbox"
+              className="lab-card-select-cb"
+              checked={selected}
+              onChange={() => onToggleSelect(card.id)}
+              aria-label={`选择第 ${index + 1} 张卡片`}
+            />
+          </label>
+        )}
         <span className="lab-card-num">#{index + 1}</span>
-        <span className="lab-card-front-preview">{card.front || '（未填写正面）'}</span>
         <div className="lab-card-actions">
           <button
             type="button"
-            className="button button-danger lab-card-remove"
-            onClick={() => onRemove(card.id)}
-            title="删除此卡"
+            className="button button-ghost lab-card-edit-btn"
+            onClick={() => setEditing((v) => !v)}
           >
-            ✕
+            {editing ? '完成' : '编辑'}
           </button>
         </div>
       </div>
 
       <div className="lab-card-body">
-        <label className="lab-card-label">正面（问题）</label>
-        <textarea
-          className="textarea lab-card-textarea"
-          value={card.front}
-          rows={2}
-          ref={autoGrow}
-          onInput={(e) => autoGrow(e.currentTarget)}
-          onChange={(e) => onChange(card.id, 'front', e.target.value)}
-        />
-        <label className="lab-card-label" style={{ marginTop: 8 }}>背面（答案）</label>
-        <textarea
-          className="textarea lab-card-textarea"
-          value={card.back}
-          rows={3}
-          ref={autoGrow}
-          onInput={(e) => autoGrow(e.currentTarget)}
-          onChange={(e) => onChange(card.id, 'back', e.target.value)}
-        />
+        {editing ? (
+          <>
+            <label className="lab-card-label">正面（问题）</label>
+            <textarea
+              ref={frontTaRef}
+              className="textarea lab-card-textarea"
+              value={card.front}
+              rows={2}
+              onInput={(e) => autoGrow(e.currentTarget)}
+              onChange={(e) => onChange(card.id, 'front', e.target.value)}
+            />
+            <label className="lab-card-label" style={{ marginTop: 8 }}>背面（答案）</label>
+            <textarea
+              ref={backTaRef}
+              className="textarea lab-card-textarea"
+              value={card.back}
+              rows={3}
+              onInput={(e) => autoGrow(e.currentTarget)}
+              onChange={(e) => onChange(card.id, 'back', e.target.value)}
+            />
+          </>
+        ) : (
+          <>
+            <label className="lab-card-label">正面（问题）</label>
+            <div className="lab-card-md-preview">
+              {card.front.trim() ? (
+                <CardRenderer content={card.front} />
+              ) : (
+                <span className="lab-card-front-placeholder">（未填写正面）</span>
+              )}
+            </div>
+            <label className="lab-card-label" style={{ marginTop: 8 }}>背面（答案）</label>
+            <div className="lab-card-md-preview">
+              {card.back.trim() ? (
+                <CardRenderer content={card.back} />
+              ) : (
+                <span className="lab-card-front-placeholder">（未填写背面）</span>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -226,8 +343,16 @@ export const LabPage: React.FC = () => {
   );
   const [promptMode, setPromptMode] = useState<PromptMode>('fast');
 
-  // 完成状态
-  const [importedCount, setImportedCount] = useState(0);
+  /** 审核阶段：批量勾选后仅导入选中项；关闭时导入全部有效卡片 */
+  const [batchSelectMode, setBatchSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [importToast, setImportToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!importToast) return;
+    const t = window.setTimeout(() => setImportToast(null), 4200);
+    return () => window.clearTimeout(t);
+  }, [importToast]);
 
   // ── 图片选择 ──────────────────────────────────────────────────────────────
   const loadImageFile = (file: File) => {
@@ -285,9 +410,21 @@ export const LabPage: React.FC = () => {
     setPhase('loading');
     setError(null);
     try {
-      const cards = await callDoubaoVision(settings.doubaoApiKey.trim(), model, imageDataUrl, prompt);
+      const urlForApi =
+        promptMode === 'fast'
+          ? await shrinkImageDataUrl(imageDataUrl, { maxLongEdge: 1280, jpegQuality: 0.82 })
+          : imageDataUrl;
+      const cards = await callDoubaoVision(settings.doubaoApiKey.trim(), model, urlForApi, prompt);
       if (cards.length === 0) throw new Error('AI 未识别到任何知识点，请尝试其他图片');
-      setDraftCards(cards);
+      setDraftCards(
+        cards.map((c) => ({
+          ...c,
+          front: normalizeLatexDelimiters(c.front),
+          back: normalizeLatexDelimiters(c.back),
+        })),
+      );
+      setBatchSelectMode(false);
+      setSelectedIds(new Set());
       setPhase('review');
       if (!targetDeckId && state.decks.length > 0) {
         setTargetDeckId(state.decks[0].id);
@@ -305,14 +442,36 @@ export const LabPage: React.FC = () => {
     );
   };
 
-  const handleCardRemove = (id: string) => {
-    setDraftCards((prev) => prev.filter((c) => c.id !== id));
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
-  // ── 导入卡组 ──────────────────────────────────────────────────────────────
   const handleImport = () => {
-    const valid = draftCards.filter((c) => c.front.trim() && c.back.trim());
-    if (!targetDeckId || valid.length === 0) return;
+    const deckName = state.decks.find((d) => d.id === targetDeckId)?.name ?? '所选卡组';
+    if (!targetDeckId) {
+      setImportToast('请先选择目标卡组');
+      return;
+    }
+    let pool: DraftCard[];
+    if (batchSelectMode) {
+      if (selectedIds.size === 0) {
+        setImportToast('请勾选要导入的卡片');
+        return;
+      }
+      pool = draftCards.filter((c) => selectedIds.has(c.id));
+    } else {
+      pool = draftCards;
+    }
+    const valid = pool.filter((c) => c.front.trim() && c.back.trim());
+    if (valid.length === 0) {
+      setImportToast('没有可导入的卡片（请填写正反面）');
+      return;
+    }
     valid.forEach((c) => {
       createCard(targetDeckId, {
         deckId: targetDeckId,
@@ -321,15 +480,21 @@ export const LabPage: React.FC = () => {
         back: c.back.trim(),
         tags: [],
         mastery: 0,
-        repetitions: 0,
+        reps: 0,
         easeFactor: 2.5,
         interval: 24 * 60 * 60 * 1000,
         nextReview: null,
         lastReviewAt: null,
       });
     });
-    setImportedCount(valid.length);
-    setPhase('done');
+    const imported = new Set(valid.map((c) => c.id));
+    setDraftCards((prev) => prev.filter((c) => !imported.has(c.id)));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      imported.forEach((id) => next.delete(id));
+      return next;
+    });
+    setImportToast(`已导入 ${valid.length} 张到「${deckName}」`);
   };
 
   // ── 重置 ──────────────────────────────────────────────────────────────────
@@ -339,7 +504,9 @@ export const LabPage: React.FC = () => {
     setImageFile(null);
     setDraftCards([]);
     setError(null);
-    setImportedCount(0);
+    setBatchSelectMode(false);
+    setSelectedIds(new Set());
+    setImportToast(null);
   };
 
   // ── 渲染 ──────────────────────────────────────────────────────────────────
@@ -348,7 +515,7 @@ export const LabPage: React.FC = () => {
     { title: '选择识别模式', desc: '先选“快速模式”或“精确模式”。' },
     { title: '运行 AI 识别', desc: '点击“运行此测试功能”开始识别。' },
     { title: '审核卡片', desc: '先检查并编辑识别出的正反面内容。' },
-    { title: '导入卡组', desc: '确认无误后，点击“导入卡组”完成导入。' },
+    { title: '导入卡组', desc: '确认无误后，在页面底部固定工具栏选择卡组并点击「导入到卡组」。' },
   ];
 
   const openHelpGuide = () => {
@@ -365,8 +532,13 @@ export const LabPage: React.FC = () => {
     return true;
   };
 
+  const importDisabled =
+    !targetDeckId ||
+    draftCards.length === 0 ||
+    (batchSelectMode && selectedIds.size === 0);
+
   return (
-    <div className="lab-page">
+    <div className={`lab-page${phase === 'review' ? ' lab-page--ai-toolbar' : ''}`}>
       {helpOpen && <div className="lab-guide-backdrop" aria-hidden />}
 
       <div className="lab-header">
@@ -413,33 +585,13 @@ export const LabPage: React.FC = () => {
       )}
       {helpOpen && isStep(4) && (
         <div className="lab-guide-fixed-arrow" aria-hidden>
-          <div className="lab-guide-fixed-text">请在右侧底部点击“导入卡组”</div>
+          <div className="lab-guide-fixed-text">请在页面底部固定栏点击「导入到卡组」</div>
           <div className="lab-guide-fixed-icon">⬇</div>
         </div>
       )}
 
-      {/* 完成状态 */}
-      {phase === 'done' && (
-        <div className="lab-done card-surface">
-          <div className="lab-done-icon">✅</div>
-          <p className="lab-done-text">
-            已成功将 <strong>{importedCount}</strong> 张卡片导入「
-            {state.decks.find((d) => d.id === targetDeckId)?.name ?? '所选卡组'}」
-          </p>
-          <div className="lab-done-actions">
-            <Link to={`/deck/${targetDeckId}/cards`} className="button button-primary">
-              查看卡组
-            </Link>
-            <button type="button" className="button button-ghost" onClick={handleReset}>
-              继续测试
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* 上传 + 识别区 */}
-      {phase !== 'done' && (
-        <div className="lab-main">
+      <div className="lab-main">
           {/* 左：测试功能（AI 图片识别制卡） */}
           <section className="lab-upload-section card-surface">
             <h3 className="lab-section-title">① 测试功能：AI 图片识别制卡</h3>
@@ -516,8 +668,8 @@ export const LabPage: React.FC = () => {
               </div>
               <span className="lab-mode-hint">
                 {promptMode === 'fast'
-                  ? '优先速度：提示词更短，默认输出更精简'
-                  : '优先质量：提示词更完整，输出更细致'}
+                  ? '优先速度：提示词更短；上传前会将图片缩至长边约 1280px 并以 JPEG 压缩以加快识别'
+                  : '优先质量：提示词更完整，输出更细致（原图上传）'}
               </span>
             </div>
 
@@ -574,40 +726,91 @@ export const LabPage: React.FC = () => {
                     key={card.id}
                     card={card}
                     index={i}
+                    batchSelect={batchSelectMode}
+                    selected={selectedIds.has(card.id)}
+                    onToggleSelect={handleToggleSelect}
                     onChange={handleCardChange}
-                    onRemove={handleCardRemove}
                   />
                 ))}
               </div>
+            </section>
+          )}
+        </div>
 
-              <div className="lab-import-bar">
+      {phase === 'review' && (
+        <>
+          {importToast && (
+            <div className="lab-import-toast" role="status">
+              {importToast}
+            </div>
+          )}
+          <div className="lab-ai-toolbar">
+            <div className="lab-ai-toolbar-inner">
+              <button
+                type="button"
+                className={`button button-ghost lab-ai-toolbar-btn${batchSelectMode ? ' active' : ''}`}
+                onClick={() => {
+                  setBatchSelectMode((prev) => {
+                    if (prev) setSelectedIds(new Set());
+                    return !prev;
+                  });
+                }}
+                title={batchSelectMode ? '关闭后，导入将包含全部有效卡片' : '开启后仅导入选中的卡片'}
+              >
+                {batchSelectMode ? '✓ 批量选择中' : '批量选择'}
+              </button>
+              {batchSelectMode && (
+                <>
+                  <button
+                    type="button"
+                    className="button button-ghost lab-ai-toolbar-btn"
+                    onClick={() => setSelectedIds(new Set(draftCards.map((c) => c.id)))}
+                    disabled={draftCards.length === 0}
+                  >
+                    全选
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-ghost lab-ai-toolbar-btn"
+                    onClick={() => setSelectedIds(new Set())}
+                    disabled={selectedIds.size === 0}
+                  >
+                    取消全选
+                  </button>
+                  <span className="lab-ai-toolbar-meta">
+                    已选 {selectedIds.size} / {draftCards.length}
+                  </span>
+                </>
+              )}
+              <label className="lab-ai-toolbar-deck-label">
+                <span className="lab-ai-toolbar-deck-text">导入到</span>
                 <select
-                  className="input lab-deck-select"
+                  className="input lab-deck-select lab-ai-toolbar-select"
                   value={targetDeckId}
                   onChange={(e) => setTargetDeckId(e.target.value)}
                 >
                   {state.decks.length === 0 && (
-                    <option value="">— 暂无卡组，请先新建 —</option>
+                    <option value="">— 暂无卡组 —</option>
                   )}
                   {state.decks.map((d) => (
                     <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  className={`button button-primary ${isStep(4) ? 'lab-guide-focus' : ''}`}
-                  disabled={draftCards.length === 0 || !targetDeckId}
-                  onClick={() => {
-                    if (advanceGuideOnTarget(4)) return;
-                    handleImport();
-                  }}
-                >
-                  导入卡组
-                </button>
-              </div>
-            </section>
-          )}
-        </div>
+              </label>
+              <button
+                type="button"
+                className={`button button-primary lab-ai-toolbar-import${isStep(4) ? ' lab-guide-focus' : ''}`}
+                disabled={importDisabled}
+                onClick={() => {
+                  if (advanceGuideOnTarget(4)) return;
+                  handleImport();
+                }}
+              >
+                导入到卡组
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

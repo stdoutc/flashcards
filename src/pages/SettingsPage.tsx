@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useFlashcard } from '../context/FlashcardContext';
 import { DEFAULT_SETTINGS } from '../domain/models';
+import { isFlashcardMobileShell } from '../utils/mobileShell';
 
 /* ── 小工具：格式化时间戳 ── */
 function fmtDate(ts: number | null): string {
@@ -68,6 +69,7 @@ export const SettingsPage: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [collapsedMap, setCollapsedMap] = useState({
     plan: true,
+    reminder: true,
     data: true,
     ai: true,
     card: true,
@@ -211,6 +213,88 @@ export const SettingsPage: React.FC = () => {
           </button>
         </SettingRow>
       </SettingSection>
+
+      {/* ── 每日学习 + 复习待办提醒（仅移动应用壳内显示，由系统本地通知调度） ── */}
+      {isFlashcardMobileShell() && (
+        <SettingSection
+          title="提醒与通知"
+          icon="🔔"
+          collapsed={collapsedMap.reminder}
+          onToggle={() => toggleSection('reminder')}
+        >
+          <p className="setting-section-desc">
+            以下开关通过系统本地通知生效。可在系统设置中管理通知权限与样式。
+          </p>
+          <SettingRow label="每日学习提醒" desc="每天在固定时间提醒打开应用学习">
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={settings.dailyReminderEnabled}
+                onChange={(e) =>
+                  updateSettings({ dailyReminderEnabled: e.target.checked })
+                }
+              />
+              <span>{settings.dailyReminderEnabled ? '已开启' : '已关闭'}</span>
+            </label>
+          </SettingRow>
+          <SettingRow
+            label="提醒时间"
+            desc="每天在此时间触发一次提醒（本地时区）"
+          >
+            <input
+              type="time"
+              className="input"
+              style={{ width: '100%', maxWidth: 220 }}
+              value={`${String(settings.dailyReminderHour).padStart(2, '0')}:${String(settings.dailyReminderMinute).padStart(2, '0')}`}
+              disabled={!settings.dailyReminderEnabled}
+              onChange={(e) => {
+                const v = e.target.value;
+                const [h, m] = v.split(':').map((x) => Number.parseInt(x, 10));
+                if (Number.isFinite(h) && Number.isFinite(m)) {
+                  updateSettings({
+                    dailyReminderHour: Math.max(0, Math.min(23, h)),
+                    dailyReminderMinute: Math.max(0, Math.min(59, m)),
+                  });
+                }
+              }}
+            />
+          </SettingRow>
+
+          <div className="setting-divider" />
+
+          <SettingRow
+            label="复习待办提醒"
+            desc="当任意卡组里从「无可复习」变为「有待复习」时提醒一次（与每日学习提醒相互独立）"
+          >
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={settings.reviewReminderEnabled}
+                onChange={(e) =>
+                  updateSettings({ reviewReminderEnabled: e.target.checked })
+                }
+              />
+              <span>{settings.reviewReminderEnabled ? '已开启' : '已关闭'}</span>
+            </label>
+          </SettingRow>
+        </SettingSection>
+      )}
 
       {/* ── 卡片管理设置 ── */}
       <SettingSection

@@ -1,5 +1,34 @@
-import type { FlashcardState } from '../domain/models';
+import type { FlashcardState, PracticeSession } from '../domain/models';
 import { createEmptyState, DEFAULT_SETTINGS } from '../domain/models';
+
+function todayStartMs(now: number): number {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** 校验并恢复「再学」会话（仅当日、卡组仍存在） */
+export function normalizePracticeSession(
+  raw: unknown,
+  decks: { id: string }[],
+  now: number,
+): PracticeSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const p = raw as Partial<PracticeSession>;
+  const today = todayStartMs(now);
+  if (typeof p.deckId !== 'string' || !decks.some((d) => d.id === p.deckId)) return null;
+  if (typeof p.dayStart !== 'number' || p.dayStart !== today) return null;
+  const target = Math.max(1, Math.min(500, Math.floor(Number(p.target) || 0)));
+  if (target < 1) return null;
+  const remaining = Math.max(0, Math.min(target, Math.floor(Number(p.remaining) || 0)));
+  return {
+    runId: typeof p.runId === 'number' ? p.runId : Date.now(),
+    target,
+    remaining,
+    deckId: p.deckId,
+    dayStart: today,
+  };
+}
 
 const STORAGE_KEY = 'flashcard_app_state_v1';
 
@@ -31,9 +60,30 @@ export function loadState(): FlashcardState {
     if (parsed.settings.cardDisplayMode === undefined) {
       parsed.settings.cardDisplayMode = DEFAULT_SETTINGS.cardDisplayMode;
     }
+    if (parsed.settings.dailyReminderEnabled === undefined) {
+      parsed.settings.dailyReminderEnabled = DEFAULT_SETTINGS.dailyReminderEnabled;
+    }
+    if (parsed.settings.dailyReminderHour === undefined) {
+      parsed.settings.dailyReminderHour = DEFAULT_SETTINGS.dailyReminderHour;
+    }
+    if (parsed.settings.dailyReminderMinute === undefined) {
+      parsed.settings.dailyReminderMinute = DEFAULT_SETTINGS.dailyReminderMinute;
+    }
+    if (parsed.settings.reviewReminderEnabled === undefined) {
+      parsed.settings.reviewReminderEnabled = DEFAULT_SETTINGS.reviewReminderEnabled;
+    }
     // 向前兼容：旧版本有 correctReviews，直接丢弃
     if (parsed.stats && 'correctReviews' in parsed.stats) {
       delete (parsed.stats as Record<string, unknown>).correctReviews;
+    }
+    if (parsed.practiceSession === undefined) {
+      parsed.practiceSession = null;
+    } else {
+      parsed.practiceSession = normalizePracticeSession(
+        parsed.practiceSession,
+        parsed.decks,
+        Date.now(),
+      );
     }
     return parsed as FlashcardState;
   } catch {

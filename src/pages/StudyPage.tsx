@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useFlashcard } from '../context/FlashcardContext';
 import { CardRenderer } from '../components/CardRenderer';
@@ -9,7 +9,7 @@ import {
   previewNextIntervals,
   RETIRED_MASTERY,
 } from '../domain/scheduler';
-import type { ReviewRating } from '../domain/models';
+import type { ReviewLogEntry, ReviewRating } from '../domain/models';
 
 
 // 进度条（带数字标注）
@@ -52,8 +52,18 @@ function getMasteryMeta(mastery: number): { label: string; cls: string; lv: numb
 
 export const StudyPage: React.FC = () => {
   const { deckId } = useParams<{ deckId: string }>();
-  const { state, selectDeck, currentStudyCard, reviewCurrentCard, markCurrentCardMastered, dailyProgress, getNow, practiceSession, startPracticeCards } =
-    useFlashcard();
+  const {
+    state,
+    selectedDeckId,
+    selectDeck,
+    currentStudyCard,
+    reviewCurrentCard,
+    markCurrentCardMastered,
+    dailyProgress,
+    getNow,
+    practiceSession,
+    startPracticeCards,
+  } = useFlashcard();
 
   const [revealed, setRevealed] = useState(false);
   const [sessionTotal, setSessionTotal] = useState(0);
@@ -61,7 +71,9 @@ export const StudyPage: React.FC = () => {
   const parsedPracticeN = parseInt(practiceCountInput, 10);
   const canStartPractice = Number.isFinite(parsedPracticeN) && parsedPracticeN > 0;
 
-  useEffect(() => {
+  // 必须在绘制前与 URL 卡组对齐：否则首帧 selectedDeckId 仍为首页初始值，
+  // 会出现「进度条是当前卡组、选卡却是别的卡组」→ 误显示本轮已完成。
+  useLayoutEffect(() => {
     if (deckId) selectDeck(deckId);
   }, [deckId, selectDeck]);
 
@@ -105,38 +117,65 @@ export const StudyPage: React.FC = () => {
     const { newToday, reviewToday } = deckId
       ? getDailyProgress(state.reviewLogs, deckId, now)
       : { newToday: 0, reviewToday: 0 };
-    const extraLimit = practiceSession?.target ?? 0;
+    const practiceExtraActive =
+      practiceSession &&
+      practiceSession.deckId === deckId &&
+      practiceSession.remaining > 0;
+    const extraLimit = practiceExtraActive ? practiceSession.target : 0;
     const newLimit    = (deck?.newPerDay ?? 0) + extraLimit;
 
     // 今日还能学的新卡数（不超过实际可用新卡数）
     const newRemaining    = Math.min(newCardsAll.length,    Math.max(0, newLimit    - newToday));
-    // 当前需要复习的旧卡数（复习不设上限，直接按到期数量）
-    // 注意：reviewCardsAll 已经是“此刻到期且待复习”的数量，不能再减 reviewToday。
-    const reviewRemaining = reviewCardsAll.length;
+    // 到期需复习：含「今日学习步」与「成熟卡到期」，界面统一为「待复习」
+    const dueRemaining = learningCards.length + reviewCardsAll.length;
 
     return {
       newRemaining,
-      learningRemaining: learningCards.length,
-      reviewRemaining,
+      dueRemaining,
       masteredCount: masteredCards.length,
       total: cardsOfDeck.length,
-      // 原始数量（供完成画面判断用）
       totalNewCards: newCardsAll.length,
-      totalReviewCards: reviewCardsAll.length,
     };
   }, [cardsOfDeck, deck, state.reviewLogs, deckId, getNow, practiceSession]);
 
   const intervalPreview = useMemo(
-    () => (currentStudyCard ? previewNextIntervals(currentStudyCard) : null),
-    [currentStudyCard],
+    () => (currentStudyCard ? previewNextIntervals(currentStudyCard, getNow()) : null),
+    [currentStudyCard, getNow],
   );
 
-  // “今日复习”分母采用：今日已复习 + 当前待复习（含学习中到期），
-  // 与实际仍需处理的复习任务口径保持一致。
-  const reviewNeedTotal = useMemo(() => {
-    if (!dailyProgress) return 0;
-    return dailyProgress.reviewToday + todayStats.reviewRemaining + todayStats.learningRemaining;
-  }, [todayStats.reviewRemaining, todayStats.learningRemaining, dailyProgress]);
+  // 每张卡在全历史中最早的一条复习日志（用于识别「新卡第一次作答」）
+  const earliestReviewLogByCardId = useMemo(() => {
+    const map = new Map<string, ReviewLogEntry>();
+    for (const l of state.reviewLogs) {
+      const prev = map.get(l.cardId);
+      if (
+        !prev ||
+        l.reviewedAt < prev.reviewedAt ||
+        (l.reviewedAt === prev.reviewedAt && l.id < prev.id)
+      ) {
+        map.set(l.cardId, l);
+      }
+    }
+    return map;
+  }, [state.reviewLogs]);
+
+  // 「今日复习」进度：分子 = 今日该卡组作答次数，但不含「该卡全历史首次作答」（归入新卡），
+  // 分母 = 上述已作答次数 + 当前到期待复习（含学习步与成熟复习）；跨日由 todayStart 自然清零。
+  const reviewLogsTodayCount = useMemo(() => {
+    if (!deckId) return 0;
+    const todayStart = getTodayStart(getNow());
+    return state.reviewLogs.filter((l) => {
+      if (l.deckId !== deckId || l.reviewedAt < todayStart) return false;
+      const first = earliestReviewLogByCardId.get(l.cardId);
+      if (first?.id === l.id) return false;
+      return true;
+    }).length;
+  }, [state.reviewLogs, deckId, getNow, earliestReviewLogByCardId]);
+
+  const reviewNeedTotal = useMemo(
+    () => reviewLogsTodayCount + todayStats.dueRemaining,
+    [reviewLogsTodayCount, todayStats.dueRemaining],
+  );
 
   const handleReveal = () => setRevealed(true);
 
@@ -164,9 +203,9 @@ export const StudyPage: React.FC = () => {
     if (!deck) return 'no-deck';
     if (todayStats.total === 0) return 'no-cards';
     if (dailyProgress) {
-      const newFull    = dailyProgress.newToday >= dailyProgress.newLimit;
-      const noLearning = todayStats.learningRemaining === 0;
-      if (noLearning && newFull && todayStats.newRemaining === 0) return 'limits-reached';
+      const newFull = dailyProgress.newToday >= dailyProgress.newLimit;
+      const noDueReview = todayStats.dueRemaining === 0;
+      if (noDueReview && newFull && todayStats.newRemaining === 0) return 'limits-reached';
     }
     return 'all-done';
   }, [deck, todayStats, dailyProgress, practiceSession, currentStudyCard]);
@@ -182,6 +221,14 @@ export const StudyPage: React.FC = () => {
       <div className="card-surface">
         <p className="hint">未找到该卡组。</p>
         <Link to="/" className="button button-ghost">返回首页</Link>
+      </div>
+    );
+  }
+
+  if (selectedDeckId !== deckId) {
+    return (
+      <div className="card-surface">
+        <p className="hint">准备学习…</p>
       </div>
     );
   }
@@ -216,7 +263,7 @@ export const StudyPage: React.FC = () => {
           />
           <LimitBar
             label="今日复习"
-            done={dailyProgress.reviewToday}
+            done={reviewLogsTodayCount}
             limit={reviewNeedTotal}
             colorClass="limit-bar-amber"
           />
@@ -225,13 +272,8 @@ export const StudyPage: React.FC = () => {
 
       {/* 剩余卡片概览 */}
       <div className="study-progress-row">
-        {todayStats.learningRemaining > 0 && (
-          <span className="progress-chip progress-chip-learning">
-            学习中 {todayStats.learningRemaining}
-          </span>
-        )}
         <span className="progress-chip progress-chip-due">
-          待复习 {todayStats.reviewRemaining}
+          待复习 {todayStats.dueRemaining}
         </span>
         <span className="progress-chip progress-chip-new">
           新卡 {todayStats.newRemaining}
@@ -252,9 +294,10 @@ export const StudyPage: React.FC = () => {
           {/* 卡片类型标签 */}
           {currentCardType && (
             <div className="study-card-type-row">
-              {currentCardType === 'new'      && <span className="card-type-badge card-type-new">新卡</span>}
-              {currentCardType === 'learning' && <span className="card-type-badge card-type-learning">学习中</span>}
-              {currentCardType === 'review'   && <span className="card-type-badge card-type-review">复习</span>}
+              {currentCardType === 'new' && <span className="card-type-badge card-type-new">新卡</span>}
+              {(currentCardType === 'learning' || currentCardType === 'review') && (
+                <span className="card-type-badge card-type-review">待复习</span>
+              )}
               {masteryMeta && (
                 <span className={`card-mastery-badge ${masteryMeta.cls}`}>
                   {masteryMeta.label} · Lv{masteryMeta.lv}

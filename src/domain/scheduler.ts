@@ -1,4 +1,4 @@
-import type { Card, ReviewLogEntry, ReviewRating, ReviewState } from './models';
+import type { Card, FlashcardState, ReviewLogEntry, ReviewRating, ReviewState } from './models';
 
 // ── 工具：今日起始时间戳 ──────────────────────
 export function getTodayStart(now = Date.now()): number {
@@ -52,8 +52,7 @@ export function formatInterval(ms: number): string {
 }
 
 // ── 预览各评级对应的下次复习间隔 ─────────────
-export function previewNextIntervals(card: Card): Record<ReviewRating, string> {
-  const now = Date.now();
+export function previewNextIntervals(card: Card, now: number = Date.now()): Record<ReviewRating, string> {
   const ratings: ReviewRating[] = ['again', 'hard', 'good', 'easy'];
   const result = {} as Record<ReviewRating, string>;
   for (const r of ratings) {
@@ -68,19 +67,79 @@ export interface ScheduleResult {
   updatedCard: Card;
 }
 
-const DAY = 24 * 60 * 60 * 1000;
+export const DAY = 24 * 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
-const HOUR = 60 * MINUTE;
-const INITIAL_EASE = 2.5;
-const MIN_EASE = 1.3;
-const EASY_BONUS = 1.3;
-const HARD_INTERVAL_MULT = 1.2;
-const LAPSE_INTERVAL_MULT = 0.5;
-const LEARNING_STEPS_MS = [1 * MINUTE, 10 * MINUTE];
-const RELEARNING_STEPS_MS = [10 * MINUTE];
-const GRADUATING_INTERVAL_MS = 1 * DAY;
-const EASY_GRADUATE_INTERVAL_MS = 4 * DAY;
 export const RETIRED_MASTERY = 4;
+
+interface LearningPhaseTuning {
+  stepsMs: number[];
+  hardIntervalFactor: number;
+  againEaseDelta: number;
+  hardEaseDelta: number;
+  easyEaseDelta: number;
+  graduatingIntervalMs: number;
+  easyGraduatingIntervalMs: number;
+  /** relearning 阶段毕业时应用，取 max(毕业间隔, 当前间隔 * multiplier) */
+  lapseMultiplier?: number;
+}
+
+interface ReviewPhaseTuning {
+  intervalModifier: number;
+  hardIntervalFactor: number;
+  easyBonus: number;
+  againEaseDelta: number;
+  hardEaseDelta: number;
+  easyEaseDelta: number;
+  relearningIntervalMs: number;
+}
+
+interface SchedulerTuning {
+  initialEase: number;
+  minEase: number;
+  maxEase: number;
+  learning: LearningPhaseTuning;
+  relearning: LearningPhaseTuning;
+  review: ReviewPhaseTuning;
+}
+
+/**
+ * 尽量贴近 Anki 的参数分层：
+ * - learning / relearning / review 分开配置
+ * - 各评级在不同阶段可使用不同增减幅度与倍率
+ */
+export const SCHEDULER_TUNING: SchedulerTuning = {
+  initialEase: 2.5,
+  minEase: 1.3,
+  maxEase: 3.5,
+  learning: {
+    stepsMs: [1 * MINUTE, 10 * MINUTE],
+    hardIntervalFactor: 1.5,
+    againEaseDelta: -0.2,
+    hardEaseDelta: -0.05,
+    easyEaseDelta: 0.15,
+    graduatingIntervalMs: 1 * DAY,
+    easyGraduatingIntervalMs: 4 * DAY,
+  },
+  relearning: {
+    stepsMs: [10 * MINUTE],
+    hardIntervalFactor: 1.3,
+    againEaseDelta: -0.2,
+    hardEaseDelta: -0.05,
+    easyEaseDelta: 0.1,
+    graduatingIntervalMs: 1 * DAY,
+    easyGraduatingIntervalMs: 3 * DAY,
+    lapseMultiplier: 0.5,
+  },
+  review: {
+    intervalModifier: 1.0,
+    hardIntervalFactor: 1.2,
+    easyBonus: 1.3,
+    againEaseDelta: -0.2,
+    hardEaseDelta: -0.15,
+    easyEaseDelta: 0.15,
+    relearningIntervalMs: 10 * MINUTE,
+  },
+};
 
 function applyMasteryDelta(card: Card, rating: ReviewRating): number {
   // 保证每次完成一次作答都有熟练度反馈：
@@ -90,8 +149,18 @@ function applyMasteryDelta(card: Card, rating: ReviewRating): number {
 }
 
 function inferReviewState(card: Card): ReviewState {
-  if (card.reviewState) return card.reviewState;
+  // 必须先判断「从未学习」：否则脏数据 reviewState='new' 与 lastReviewAt 同时存在时会一直走「新卡」分支，
+  // 或错误地覆盖调度结果，表现为熟练度/间隔不更新。
   if (card.lastReviewAt === null) return 'new';
+  if (card.reviewState === 'learning' || card.reviewState === 'relearning') return card.reviewState;
+  if (card.reviewState === 'review') return 'review';
+  if (card.reviewState === 'new') {
+    return (card.interval ?? 0) < DAY ? 'learning' : 'review';
+  }
+  // 已作答但缺 reviewState（导入/旧数据）：短间隔视为仍在学习步
+  if (!card.reviewState) {
+    return (card.interval ?? 0) < DAY ? 'learning' : 'review';
+  }
   return 'review';
 }
 
@@ -104,24 +173,28 @@ function getDueAt(card: Card): number {
 }
 
 function clampEase(v: number): number {
-  return Math.max(MIN_EASE, v);
+  return Math.max(
+    SCHEDULER_TUNING.minEase,
+    Math.min(SCHEDULER_TUNING.maxEase, v),
+  );
 }
 
 function applyLearningStep(
   card: Card,
   now: number,
   rating: ReviewRating,
-  stepMs: number[],
+  phase: LearningPhaseTuning,
   mode: 'learning' | 'relearning',
 ): Card {
-  const ease = card.easeFactor || INITIAL_EASE;
+  const ease = card.easeFactor || SCHEDULER_TUNING.initialEase;
+  const stepMs = phase.stepsMs;
   const step = card.learningStep ?? 0;
   const currentDelay = stepMs[Math.min(step, stepMs.length - 1)] ?? stepMs[0] ?? MINUTE;
 
   if (rating === 'again') {
     return {
       ...card,
-      easeFactor: clampEase(ease - 0.2),
+      easeFactor: clampEase(ease + phase.againEaseDelta),
       interval: stepMs[0] ?? MINUTE,
       nextReview: now + (stepMs[0] ?? MINUTE),
       lastReviewAt: now,
@@ -135,10 +208,10 @@ function applyLearningStep(
   }
 
   if (rating === 'hard') {
-    const hardDelay = Math.max(MINUTE, Math.round(currentDelay * 1.5));
+    const hardDelay = Math.max(MINUTE, Math.round(currentDelay * phase.hardIntervalFactor));
     return {
       ...card,
-      easeFactor: clampEase(ease - 0.05),
+      easeFactor: clampEase(ease + phase.hardEaseDelta),
       interval: hardDelay,
       nextReview: now + hardDelay,
       lastReviewAt: now,
@@ -153,9 +226,9 @@ function applyLearningStep(
   if (rating === 'easy') {
     return {
       ...card,
-      easeFactor: ease + 0.15,
-      interval: EASY_GRADUATE_INTERVAL_MS,
-      nextReview: now + EASY_GRADUATE_INTERVAL_MS,
+      easeFactor: clampEase(ease + phase.easyEaseDelta),
+      interval: phase.easyGraduatingIntervalMs,
+      nextReview: now + phase.easyGraduatingIntervalMs,
       lastReviewAt: now,
       reviewState: 'review',
       learningStep: 0,
@@ -182,10 +255,12 @@ function applyLearningStep(
     };
   }
 
-  const graduateInterval =
-    mode === 'relearning'
-      ? Math.max(GRADUATING_INTERVAL_MS, Math.round((card.interval || DAY) * LAPSE_INTERVAL_MULT))
-      : GRADUATING_INTERVAL_MS;
+  const graduateInterval = phase.lapseMultiplier != null
+    ? Math.max(
+      phase.graduatingIntervalMs,
+      Math.round((card.interval || DAY) * phase.lapseMultiplier),
+    )
+    : phase.graduatingIntervalMs;
   return {
     ...card,
     interval: graduateInterval,
@@ -207,32 +282,33 @@ export function scheduleReview(card: Card, rating: ReviewRating, now: number): S
       { ...card, reviewState: 'learning', learningStep: card.learningStep ?? 0 },
       now,
       rating,
-      LEARNING_STEPS_MS,
+      SCHEDULER_TUNING.learning,
       'learning',
     );
     return { updatedCard: updated };
   }
 
   if (state === 'learning') {
-    const updated = applyLearningStep(card, now, rating, LEARNING_STEPS_MS, 'learning');
+    const updated = applyLearningStep(card, now, rating, SCHEDULER_TUNING.learning, 'learning');
     return { updatedCard: updated };
   }
 
   if (state === 'relearning') {
-    const updated = applyLearningStep(card, now, rating, RELEARNING_STEPS_MS, 'relearning');
+    const updated = applyLearningStep(card, now, rating, SCHEDULER_TUNING.relearning, 'relearning');
     return { updatedCard: updated };
   }
 
   // review 状态：Anki SM-2 风格区间增长
   const previousInterval = Math.max(DAY, card.interval || DAY);
-  const ease = card.easeFactor || INITIAL_EASE;
+  const ease = card.easeFactor || SCHEDULER_TUNING.initialEase;
+  const reviewTuning = SCHEDULER_TUNING.review;
 
   if (rating === 'again') {
-    const relearnDelay = RELEARNING_STEPS_MS[0] ?? (10 * MINUTE);
+    const relearnDelay = reviewTuning.relearningIntervalMs;
     return {
       updatedCard: {
         ...card,
-        easeFactor: clampEase(ease - 0.2),
+        easeFactor: clampEase(ease + reviewTuning.againEaseDelta),
         interval: relearnDelay,
         nextReview: now + relearnDelay,
         lastReviewAt: now,
@@ -249,13 +325,22 @@ export function scheduleReview(card: Card, rating: ReviewRating, now: number): S
   let nextEase = ease;
   let nextInterval = previousInterval;
   if (rating === 'hard') {
-    nextEase = clampEase(ease - 0.15);
-    nextInterval = Math.max(DAY, Math.round(previousInterval * HARD_INTERVAL_MULT));
+    nextEase = clampEase(ease + reviewTuning.hardEaseDelta);
+    nextInterval = Math.max(
+      DAY,
+      Math.round(previousInterval * reviewTuning.hardIntervalFactor * reviewTuning.intervalModifier),
+    );
   } else if (rating === 'good') {
-    nextInterval = Math.max(DAY, Math.round(previousInterval * ease));
+    nextInterval = Math.max(
+      DAY,
+      Math.round(previousInterval * ease * reviewTuning.intervalModifier),
+    );
   } else {
-    nextEase = ease + 0.15;
-    nextInterval = Math.max(DAY, Math.round(previousInterval * ease * EASY_BONUS));
+    nextEase = clampEase(ease + reviewTuning.easyEaseDelta);
+    nextInterval = Math.max(
+      DAY,
+      Math.round(previousInterval * ease * reviewTuning.easyBonus * reviewTuning.intervalModifier),
+    );
   }
 
   return {
@@ -300,22 +385,25 @@ export function pickNextCard(
 
   // 无日限模式（兜底）
   if (!options) {
-    const learningCards = activeCards.filter(
+    const todayStart = getTodayStart(now);
+    // 与 StudyPage 统计一致：先今日到期，再往日到期（不依赖 inferReviewState===review，避免脏数据卡死）
+    const todayDue = activeCards.filter(
       (c) =>
-        (inferReviewState(c) === 'learning' || inferReviewState(c) === 'relearning') &&
+        c.lastReviewAt != null &&
+        c.lastReviewAt >= todayStart &&
         getDueAt(c) <= now,
     );
-    if (learningCards.length > 0) {
-      return [...learningCards].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0];
+    if (todayDue.length > 0) {
+      return [...todayDue].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0];
     }
-
-    const reviewCards = activeCards.filter(
+    const matureDue = activeCards.filter(
       (c) =>
-        inferReviewState(c) === 'review' &&
+        c.lastReviewAt != null &&
+        c.lastReviewAt < todayStart &&
         getDueAt(c) <= now,
     );
-    if (reviewCards.length > 0) {
-      return [...reviewCards].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0];
+    if (matureDue.length > 0) {
+      return [...matureDue].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0];
     }
 
     const newCards = activeCards.filter((c) => inferReviewState(c) === 'new');
@@ -325,25 +413,27 @@ export function pickNextCard(
 
   const { newPerDay, reviewLogs, deckId } = options;
   const { newToday } = getDailyProgress(reviewLogs, deckId, now);
+  const todayStart = getTodayStart(now);
 
-  // 1. 学习中（今日首次学习后仍需继续复习的卡片）
-  const learningCards = activeCards.filter(
+  // 1 / 2. 与 StudyPage「待复习」计数完全一致：今日已学且到期 → 往日已学且到期
+  //    成熟队列不能再用 inferReviewState==='review'：若 reviewState 脏为 new 会与界面张数不一致
+  const todayDue = activeCards.filter(
     (c) =>
-      (inferReviewState(c) === 'learning' || inferReviewState(c) === 'relearning') &&
+      c.lastReviewAt != null &&
+      c.lastReviewAt >= todayStart &&
       getDueAt(c) <= now,
   );
-  if (learningCards.length > 0) {
-    return [...learningCards].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0];
+  if (todayDue.length > 0) {
+    return [...todayDue].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0];
   }
-
-  // 2. 待复习的成熟卡片（不设复习上限）
-  const reviewCards = activeCards.filter(
+  const matureDue = activeCards.filter(
     (c) =>
-      inferReviewState(c) === 'review' &&
+      c.lastReviewAt != null &&
+      c.lastReviewAt < todayStart &&
       getDueAt(c) <= now,
   );
-  if (reviewCards.length > 0) {
-    return [...reviewCards].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0];
+  if (matureDue.length > 0) {
+    return [...matureDue].sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))[0];
   }
 
   // 3. 全新卡片
@@ -353,4 +443,18 @@ export function pickNextCard(
   }
 
   return null;
+}
+
+/** 任意卡组中是否存在「当前时刻」可学的待办卡片（与复习页调度一致，含日限） */
+export function hasAnyDueCards(state: FlashcardState, now: number): boolean {
+  for (const deck of state.decks) {
+    const deckCards = state.cards.filter((c) => c.deckId === deck.id);
+    const next = pickNextCard(deckCards, now, {
+      newPerDay: deck.newPerDay,
+      reviewLogs: state.reviewLogs,
+      deckId: deck.id,
+    });
+    if (next !== null) return true;
+  }
+  return false;
 }

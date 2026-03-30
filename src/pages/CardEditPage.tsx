@@ -89,7 +89,12 @@ const CardEditor: React.FC<CardEditorProps> = ({
   onCancel,
   onFoldedContentChange,
 }) => {
-  const [previewOpen, setPreviewOpen] = useState(true);
+  const [isCompactLayout, setIsCompactLayout] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches,
+  );
+  const [previewOpen, setPreviewOpen] = useState(
+    () => !(typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches),
+  );
   const [activeField, setActiveField] = useState<'front' | 'back'>('front');
 
   // 图片链接插入状态
@@ -101,6 +106,20 @@ const CardEditor: React.FC<CardEditorProps> = ({
   const imgUrlRef = useRef<HTMLInputElement>(null);
   const imgFileRef = useRef<HTMLInputElement>(null);
   const [imgDropHover, setImgDropHover] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const media = window.matchMedia('(max-width: 860px)');
+    const applyLayout = (isCompact: boolean) => {
+      setIsCompactLayout(isCompact);
+      setPreviewOpen((prev) => (isCompact ? false : prev));
+    };
+
+    applyLayout(media.matches);
+    const onChange = (event: MediaQueryListEvent) => applyLayout(event.matches);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
 
   const handleLocalFileByFile = useCallback((file: File) => {
     setImgInsertMode('local');
@@ -443,7 +462,9 @@ const CardEditor: React.FC<CardEditorProps> = ({
         )}
 
         {/* 编辑 + 实时预览分屏 */}
-        <div className={`editor-split${previewOpen ? ' editor-split--with-preview' : ''}`}>
+        <div
+          className={`editor-split${previewOpen ? ' editor-split--with-preview' : ''}${isCompactLayout && previewOpen ? ' editor-split--preview-only' : ''}`}
+        >
           {/* 左：编辑区 */}
           <div className="editor-split-main">
             <div className="field">

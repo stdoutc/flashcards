@@ -62,6 +62,24 @@ export interface AppSettings {
   doubaoApiKey: string;
   doubaoModel: string;
   cardDisplayMode: CardDisplayMode;
+  /** 每日学习提醒（由移动应用 WebView 壳调度系统本地通知；网页端仅保存选项） */
+  dailyReminderEnabled: boolean;
+  /** 0–23 */
+  dailyReminderHour: number;
+  /** 0–59 */
+  dailyReminderMinute: number;
+  /** 有待复习卡片时由壳层周期性本地提醒（依赖当前数据，仅应用打开期间会刷新调度） */
+  reviewReminderEnabled: boolean;
+}
+
+/** 「再学 n 张」会话：当日有效，持久化后跨重启保留剩余额度 */
+export interface PracticeSession {
+  runId: number;
+  target: number;
+  remaining: number;
+  deckId: string;
+  /** 当日 0:00 时间戳，与 scheduler.getTodayStart 一致 */
+  dayStart: number;
 }
 
 export interface FlashcardState {
@@ -70,6 +88,7 @@ export interface FlashcardState {
   reviewLogs: ReviewLogEntry[];
   stats: StudyStats;
   settings: AppSettings;
+  practiceSession: PracticeSession | null;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -78,6 +97,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   doubaoApiKey: '',
   doubaoModel: 'doubao-1-5-vision-pro-32k-250115',
   cardDisplayMode: 'both',
+  dailyReminderEnabled: false,
+  dailyReminderHour: 9,
+  dailyReminderMinute: 0,
+  reviewReminderEnabled: false,
 };
 
 export function createEmptyState(): FlashcardState {
@@ -90,5 +113,6 @@ export function createEmptyState(): FlashcardState {
       lastStudyAt: null,
     },
     settings: { ...DEFAULT_SETTINGS },
+    practiceSession: null,
   };
 }

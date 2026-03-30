@@ -16,7 +16,7 @@ if (!existsSync(srcDist)) {
 }
 
 if (existsSync(targetWeb)) {
-  rmSync(targetWeb, { recursive: true, force: true });
+  rmSync(targetWeb, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 mkdirSync(targetWeb, { recursive: true });
 cpSync(srcDist, targetWeb, { recursive: true });
@@ -39,6 +39,19 @@ const inlinedHtml = indexHtml
     },
   );
 
-writeFileSync(targetIndex, inlinedHtml, "utf8");
+const NO_ZOOM_VIEWPORT =
+  "width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no";
+
+function enforceNoZoomViewport(html) {
+  if (/<meta\s+name=["']viewport["']/i.test(html)) {
+    return html.replace(
+      /<meta\s+name=["']viewport["']\s+content=["'][^"']*["']\s*\/?>/i,
+      `<meta name="viewport" content="${NO_ZOOM_VIEWPORT}" />`,
+    );
+  }
+  return html.replace(/<head(\s[^>]*)?>/i, `<head$1>\n    <meta name="viewport" content="${NO_ZOOM_VIEWPORT}" />\n`);
+}
+
+writeFileSync(targetIndex, enforceNoZoomViewport(inlinedHtml), "utf8");
 
 console.log("web 资源已同步到 mobile1/assets/web（已内联 JS/CSS，适配 iOS 离线 WebView）");

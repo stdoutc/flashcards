@@ -30,6 +30,12 @@ function computeStreak(reviewLogs: ReviewLogEntry[]): number {
   return streak;
 }
 
+/** 有学习记录的不重复日历天数 */
+function countStudyDays(reviewLogs: ReviewLogEntry[]): number {
+  if (!reviewLogs.length) return 0;
+  return new Set(reviewLogs.map((l) => dayKey(l.reviewedAt))).size;
+}
+
 function fmtDate(ts: number | null): string {
   if (!ts) return '—';
   return new Date(ts).toLocaleDateString('zh-CN', {
@@ -104,10 +110,12 @@ export const StatsPage: React.FC = () => {
     const masteryPct =
       totalCards > 0 ? Math.round((masteredCards / totalCards) * 100) : 0;
     const streak = computeStreak(state.reviewLogs);
+    const studyDays = countStudyDays(state.reviewLogs);
     return {
       totalDecks: state.decks.length,
       totalCards,
       totalReviews: state.stats.totalReviews,
+      studyDays,
       masteredCards,
       masteryPct,
       streak,
@@ -235,15 +243,16 @@ export const StatsPage: React.FC = () => {
               <KpiCard value={kpi.totalDecks} label="卡组数量" />
               <KpiCard value={kpi.totalCards} label="卡片总数" />
               <KpiCard value={kpi.masteredCards} label="已掌握" color="#22c55e" />
-              <KpiCard value={kpi.totalReviews} label="累计学习" />
+              <KpiCard value={kpi.totalReviews} label="累计学习次数" />
               <KpiCard
                 value={kpi.totalCards > 0 ? `${kpi.masteryPct}%` : '—'}
                 label="综合掌握率"
                 color={kpi.masteryPct >= 80 ? '#22c55e' : kpi.masteryPct >= 50 ? '#f59e0b' : undefined}
               />
+              <KpiCard value={kpi.studyDays} label="累计学习天数" />
               <KpiCard
                 value={kpi.streak}
-                label="连续学习天"
+                label="连续学习天数"
                 color={kpi.streak >= 7 ? '#f59e0b' : undefined}
               />
             </div>

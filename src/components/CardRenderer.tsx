@@ -61,6 +61,15 @@ md.use({
   },
 });
 
+/** 将 \\(...\\)、\\[...\\] 转为 KaTeX 扩展识别的 $、$$，便于与编辑器/模型输出对齐 */
+export function normalizeLatexDelimiters(text: string): string {
+  if (!text) return text;
+  let s = text;
+  s = s.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner: string) => `$$${inner.trim()}$$`);
+  s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_, inner: string) => `$${inner.trim()}$`);
+  return s;
+}
+
 // 将内容中的图片替换为名称徽章（用于列表紧凑展示）
 function stripImages(content: string): string {
   return content
@@ -80,7 +89,8 @@ function stripImages(content: string): string {
 export const CardRenderer: React.FC<Props> = ({ content, className, compact }) => {
   if (!content) return null;
   const html = useMemo(() => {
-    const src = compact ? stripImages(content) : content;
+    const raw = compact ? stripImages(content) : content;
+    const src = normalizeLatexDelimiters(raw);
     return md.parse(src) as string;
   }, [content, compact]);
   return (
