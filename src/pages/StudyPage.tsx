@@ -330,7 +330,7 @@ export const StudyPage: React.FC = () => {
           {!revealed ? (
             <div className="study-actions-wrap">
               <button type="button" className="button-show-answer" onClick={handleReveal}>
-                显示答案
+                显示反面
               </button>
             </div>
           ) : (

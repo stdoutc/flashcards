@@ -54,4 +54,4 @@ function enforceNoZoomViewport(html) {
 
 writeFileSync(targetIndex, enforceNoZoomViewport(inlinedHtml), "utf8");
 
-console.log("web 资源已同步到 mobile1/assets/web（已内联 JS/CSS，适配 iOS 离线 WebView）");
+console.log("web 资源已同步到 mobile/assets/web（已内联 JS/CSS，适配 iOS 离线 WebView）");

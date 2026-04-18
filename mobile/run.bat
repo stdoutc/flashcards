@@ -1,3 +1,1 @@
-chcp 65001
-npx expo start -c --tunnel
-pause
+chcp 65001 & npm run sync-web & npx expo start -c --tunnel & pause
